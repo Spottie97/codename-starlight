@@ -10,6 +10,8 @@ export const NodeTypeEnum = z.enum([
   'SWITCH',
   'SERVER',
   'GATEWAY',
+  'ACCESS_POINT',
+  'FIREWALL',
   'VIRTUAL'
 ]);
 
@@ -20,8 +22,27 @@ export const StatusEnum = z.enum([
   'UNKNOWN'
 ]);
 
+export const MonitoringMethodEnum = z.enum([
+  'MQTT',
+  'PING',
+  'SNMP',
+  'HTTP',
+  'NONE'
+]);
+
 export type NodeType = z.infer<typeof NodeTypeEnum>;
 export type Status = z.infer<typeof StatusEnum>;
+export type MonitoringMethod = z.infer<typeof MonitoringMethodEnum>;
+
+// IP address validation regex
+const ipAddressRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+// Validate IP address or hostname
+const ipOrHostname = z.string().refine(
+  (val) => ipAddressRegex.test(val) || hostnameRegex.test(val),
+  { message: 'Must be a valid IP address or hostname' }
+);
 
 // ============================================
 // Node Schemas
@@ -33,7 +54,24 @@ export const CreateNodeSchema = z.object({
   description: z.string().optional(),
   positionX: z.number().optional().default(0),
   positionY: z.number().optional().default(0),
+  
+  // Monitoring configuration
+  monitoringMethod: MonitoringMethodEnum.optional().default('NONE'),
+  ipAddress: ipOrHostname.optional(),
+  pingInterval: z.number().min(10).max(3600).optional().default(30),
+  
+  // MQTT configuration (for PROBE type)
   mqttTopic: z.string().optional(),
+  
+  // SNMP configuration
+  snmpCommunity: z.string().optional(),
+  snmpVersion: z.enum(['1', '2c', '3']).optional().default('2c'),
+  
+  // HTTP configuration
+  httpEndpoint: z.string().url().optional(),
+  httpExpectedCode: z.number().min(100).max(599).optional().default(200),
+  
+  // Visual customization
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().default('#4F46E5'),
   icon: z.string().optional(),
 });
@@ -44,9 +82,28 @@ export const UpdateNodeSchema = z.object({
   description: z.string().optional().nullable(),
   positionX: z.number().optional(),
   positionY: z.number().optional(),
+  
+  // Monitoring configuration
+  monitoringMethod: MonitoringMethodEnum.optional(),
+  ipAddress: ipOrHostname.optional().nullable(),
+  pingInterval: z.number().min(10).max(3600).optional(),
+  
+  // MQTT configuration
   mqttTopic: z.string().optional().nullable(),
+  
+  // SNMP configuration
+  snmpCommunity: z.string().optional().nullable(),
+  snmpVersion: z.enum(['1', '2c', '3']).optional(),
+  
+  // HTTP configuration
+  httpEndpoint: z.string().url().optional().nullable(),
+  httpExpectedCode: z.number().min(100).max(599).optional(),
+  
+  // Visual customization
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   icon: z.string().optional().nullable(),
+  
+  // Status (can be manually set)
   status: StatusEnum.optional(),
   internetStatus: StatusEnum.optional(),
 });
@@ -134,14 +191,28 @@ export interface NodeWithConnections {
   description: string | null;
   positionX: number;
   positionY: number;
+  
+  // Monitoring configuration
+  monitoringMethod: MonitoringMethod;
+  ipAddress: string | null;
+  pingInterval: number;
   mqttTopic: string | null;
+  snmpCommunity: string | null;
+  snmpVersion: string;
+  httpEndpoint: string | null;
+  httpExpectedCode: number;
+  
+  // Status
   status: Status;
   lastSeen: Date | null;
   latency: number | null;
   internetStatus: Status;
   internetLastCheck: Date | null;
+  
+  // Visual
   color: string;
   icon: string | null;
+  
   createdAt: Date;
   updatedAt: Date;
 }

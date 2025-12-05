@@ -1,15 +1,48 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Stage, Layer, Group } from 'react-konva';
+import { Stage, Layer } from 'react-konva';
+import { 
+  Radio, 
+  Router, 
+  GitBranch, 
+  Server, 
+  Globe, 
+  Wifi, 
+  Shield, 
+  Box,
+  X
+} from 'lucide-react';
 import { useNetworkStore, selectNodes, selectConnections, selectEditorMode, selectCanvasState } from '../../store/networkStore';
 import { NetworkNode } from './NetworkNode';
 import { ConnectionLine } from './ConnectionLine';
 import { GridBackground } from './GridBackground';
 import { nodesApi, connectionsApi } from '../../services/api';
-import type { CreateNodeDTO, NetworkNode as INetworkNode } from '../../types/network';
+import type { CreateNodeDTO, NetworkNode as INetworkNode, NodeType } from '../../types/network';
+import { NODE_TYPE_COLORS, DEFAULT_MONITORING_METHOD, NODE_TYPE_LABELS } from '../../types/network';
+import { cn } from '../../lib/utils';
+
+// Node type options for the selector
+const NODE_TYPE_OPTIONS: { value: NodeType; label: string; icon: React.ReactNode; description: string }[] = [
+  { value: 'PROBE', label: 'Probe', icon: <Radio size={20} />, description: 'Physical monitoring device (ESP32, Arduino)' },
+  { value: 'ROUTER', label: 'Router', icon: <Router size={20} />, description: 'Network router' },
+  { value: 'SWITCH', label: 'Switch', icon: <GitBranch size={20} />, description: 'Network switch' },
+  { value: 'SERVER', label: 'Server', icon: <Server size={20} />, description: 'Server or computer' },
+  { value: 'GATEWAY', label: 'Gateway', icon: <Globe size={20} />, description: 'Internet gateway/modem' },
+  { value: 'ACCESS_POINT', label: 'Access Point', icon: <Wifi size={20} />, description: 'Wireless access point' },
+  { value: 'FIREWALL', label: 'Firewall', icon: <Shield size={20} />, description: 'Network firewall' },
+  { value: 'VIRTUAL', label: 'Virtual', icon: <Box size={20} />, description: 'Visual grouping (no monitoring)' },
+];
+
+interface PendingNode {
+  x: number;
+  y: number;
+  screenX: number;
+  screenY: number;
+}
 
 export function NetworkCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [pendingNode, setPendingNode] = useState<PendingNode | null>(null);
   
   const nodes = useNetworkStore(selectNodes);
   const connections = useNetworkStore(selectConnections);
@@ -44,6 +77,18 @@ export function NetworkCanvas() {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
+  // Close pending node selector on ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPendingNode(null);
+        cancelConnecting();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelConnecting]);
+
   // Handle canvas click for adding nodes
   const handleStageClick = useCallback(async (e: any) => {
     // Only handle clicks on the stage itself (not on nodes)
@@ -57,22 +102,13 @@ export function NetworkCanvas() {
       const x = (pointer.x - canvas.offsetX) / canvas.scale;
       const y = (pointer.y - canvas.offsetY) / canvas.scale;
 
-      const newNode: CreateNodeDTO = {
-        name: `Probe ${nodes.length + 1}`,
-        type: 'PROBE',
-        positionX: x,
-        positionY: y,
-        color: '#05d9e8',
-      };
-
-      try {
-        const response = await nodesApi.create(newNode);
-        if (response.success && response.data) {
-          addNode(response.data);
-        }
-      } catch (error) {
-        console.error('Failed to create node:', error);
-      }
+      // Show node type selector
+      setPendingNode({
+        x,
+        y,
+        screenX: pointer.x,
+        screenY: pointer.y,
+      });
     } else if (editorMode === 'select') {
       setSelectedNode(null);
     }
@@ -81,7 +117,32 @@ export function NetworkCanvas() {
     if (connectingFromId) {
       cancelConnecting();
     }
-  }, [editorMode, canvas, nodes.length, addNode, setSelectedNode, connectingFromId, cancelConnecting]);
+  }, [editorMode, canvas, setSelectedNode, connectingFromId, cancelConnecting]);
+
+  // Create node with selected type
+  const handleCreateNode = async (type: NodeType) => {
+    if (!pendingNode) return;
+
+    const newNode: CreateNodeDTO = {
+      name: `${NODE_TYPE_LABELS[type]} ${nodes.filter(n => n.type === type).length + 1}`,
+      type,
+      positionX: pendingNode.x,
+      positionY: pendingNode.y,
+      color: NODE_TYPE_COLORS[type],
+      monitoringMethod: DEFAULT_MONITORING_METHOD[type],
+    };
+
+    try {
+      const response = await nodesApi.create(newNode);
+      if (response.success && response.data) {
+        addNode(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to create node:', error);
+    }
+
+    setPendingNode(null);
+  };
 
   // Handle node click
   const handleNodeClick = useCallback(async (node: INetworkNode) => {
@@ -220,6 +281,53 @@ export function NetworkCanvas() {
         </Layer>
       </Stage>
 
+      {/* Node Type Selector Popup */}
+      {pendingNode && (
+        <div 
+          className="absolute z-50"
+          style={{
+            left: Math.min(pendingNode.screenX, dimensions.width - 320),
+            top: Math.min(pendingNode.screenY, dimensions.height - 400),
+          }}
+        >
+          <div className="glass-dark rounded-xl overflow-hidden w-[300px] shadow-2xl border border-dark-500">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-dark-500">
+              <span className="text-sm font-semibold text-neon-blue">Select Node Type</span>
+              <button
+                onClick={() => setPendingNode(null)}
+                className="p-1 text-gray-400 hover:text-white hover:bg-dark-600 rounded transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-2 grid grid-cols-2 gap-1.5 max-h-[320px] overflow-y-auto">
+              {NODE_TYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleCreateNode(option.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 p-3 rounded-lg transition-all',
+                    'hover:bg-dark-600 hover:scale-[1.02]',
+                    'text-gray-300 hover:text-white',
+                    'border border-transparent hover:border-dark-400'
+                  )}
+                >
+                  <div 
+                    className="p-2 rounded-lg"
+                    style={{ backgroundColor: `${NODE_TYPE_COLORS[option.value]}20` }}
+                  >
+                    <span style={{ color: NODE_TYPE_COLORS[option.value] }}>
+                      {option.icon}
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Connecting indicator */}
       {connectingFromId && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 glass-dark px-4 py-2 rounded-lg text-sm">
@@ -230,7 +338,3 @@ export function NetworkCanvas() {
     </div>
   );
 }
-
-
-
-

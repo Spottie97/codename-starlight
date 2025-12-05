@@ -10,6 +10,7 @@ import { probesRouter } from './routes/probes';
 import { networkRouter } from './routes/network';
 import { initWebSocketServer } from './services/websocketService';
 import { initMqttService } from './services/mqttService';
+import { startMonitoringScheduler, stopMonitoringScheduler } from './services/monitoringService';
 
 // Load environment variables
 dotenv.config();
@@ -69,6 +70,11 @@ async function startServer() {
     await initMqttService();
     console.log('✅ MQTT service initialized');
 
+    // Start monitoring scheduler for active monitoring (ping/snmp/http)
+    const monitoringInterval = parseInt(process.env.MONITORING_INTERVAL || '30000', 10);
+    startMonitoringScheduler(monitoringInterval);
+    console.log('✅ Monitoring scheduler started');
+
     // Start HTTP server
     httpServer.listen(PORT, () => {
       console.log(`
@@ -93,12 +99,14 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  stopMonitoringScheduler();
   await prisma.$disconnect();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  stopMonitoringScheduler();
   await prisma.$disconnect();
   process.exit(0);
 });

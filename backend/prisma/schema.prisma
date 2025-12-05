@@ -13,12 +13,23 @@ datasource db {
 
 // Node types for the network
 enum NodeType {
-  PROBE       // Physical probe device (Arduino, ESP32, etc.)
-  ROUTER      // Network router
-  SWITCH      // Network switch
-  SERVER      // Server or computer
-  GATEWAY     // Internet gateway
-  VIRTUAL     // Virtual/logical grouping node
+  PROBE         // Physical probe device (Arduino, ESP32, etc.)
+  ROUTER        // Network router
+  SWITCH        // Network switch
+  SERVER        // Server or computer
+  GATEWAY       // Internet gateway
+  ACCESS_POINT  // Wireless access point
+  FIREWALL      // Network firewall
+  VIRTUAL       // Virtual/logical grouping node
+}
+
+// Monitoring method for each node
+enum MonitoringMethod {
+  MQTT    // Push updates from device (probes only)
+  PING    // ICMP ping polling
+  SNMP    // SNMP polling
+  HTTP    // HTTP endpoint health check
+  NONE    // Visual-only node (no monitoring)
 }
 
 // Status of a node or probe
@@ -40,8 +51,21 @@ model Node {
   positionX   Float    @default(0)
   positionY   Float    @default(0)
   
-  // MQTT configuration
+  // Monitoring configuration
+  monitoringMethod  MonitoringMethod @default(NONE)
+  ipAddress         String?
+  pingInterval      Int     @default(30)  // seconds between checks
+  
+  // MQTT configuration (for PROBE type)
   mqttTopic   String?  @unique
+  
+  // SNMP configuration
+  snmpCommunity     String?
+  snmpVersion       String  @default("2c")
+  
+  // HTTP health check configuration
+  httpEndpoint      String?
+  httpExpectedCode  Int     @default(200)
   
   // Current status
   status      Status   @default(UNKNOWN)
@@ -69,6 +93,8 @@ model Node {
   
   @@index([status])
   @@index([mqttTopic])
+  @@index([monitoringMethod])
+  @@index([ipAddress])
 }
 
 // Connection between nodes

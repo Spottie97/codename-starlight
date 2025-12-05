@@ -1,8 +1,26 @@
 import { useRef, useEffect, useState } from 'react';
-import { Group, Circle, Text, Ring } from 'react-konva';
+import { Group, Circle, Text, Ring, Rect } from 'react-konva';
 import Konva from 'konva';
-import type { NetworkNode as INetworkNode, EditorMode } from '../../types/network';
-import { STATUS_COLORS } from '../../types/network';
+import type { NetworkNode as INetworkNode, EditorMode, NodeType, MonitoringMethod } from '../../types/network';
+import { STATUS_COLORS, NODE_TYPE_LABELS } from '../../types/network';
+
+// Monitoring method badge colors
+const MONITORING_METHOD_COLORS: Record<MonitoringMethod, string> = {
+  MQTT: '#05d9e8',  // Cyan
+  PING: '#39ff14',  // Green
+  SNMP: '#d300c5',  // Purple
+  HTTP: '#ff6b35',  // Orange
+  NONE: '#6b7280',  // Gray
+};
+
+// Monitoring method badge labels
+const MONITORING_METHOD_SHORT: Record<MonitoringMethod, string> = {
+  MQTT: 'M',
+  PING: 'P',
+  SNMP: 'S',
+  HTTP: 'H',
+  NONE: '-',
+};
 
 interface NetworkNodeProps {
   node: INetworkNode;
@@ -158,6 +176,33 @@ export function NetworkNode({
         strokeWidth={2}
       />
 
+      {/* Monitoring method badge */}
+      {node.monitoringMethod && node.monitoringMethod !== 'NONE' && (
+        <Group x={-nodeRadius + 2} y={-nodeRadius + 2}>
+          <Rect
+            width={14}
+            height={14}
+            cornerRadius={3}
+            fill={MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280'}
+            shadowColor={MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280'}
+            shadowBlur={5}
+            shadowOpacity={0.5}
+          />
+          <Text
+            text={MONITORING_METHOD_SHORT[node.monitoringMethod] || '?'}
+            fontSize={9}
+            fontFamily="Orbitron"
+            fontStyle="bold"
+            fill="#12121a"
+            width={14}
+            height={14}
+            align="center"
+            verticalAlign="middle"
+            offsetY={-2}
+          />
+        </Group>
+      )}
+
       {/* Node name */}
       <Text
         text={node.name}
@@ -173,7 +218,7 @@ export function NetworkNode({
 
       {/* Node type label */}
       <Text
-        text={node.type}
+        text={NODE_TYPE_LABELS[node.type] || node.type}
         fontSize={9}
         fontFamily="Rajdhani"
         fill="#6b7280"

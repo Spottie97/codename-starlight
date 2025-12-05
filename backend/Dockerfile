@@ -3,8 +3,8 @@
 # Development stage
 FROM node:20-slim AS development
 
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL for Prisma and iputils-ping for network monitoring
+RUN apt-get update && apt-get install -y openssl iputils-ping && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

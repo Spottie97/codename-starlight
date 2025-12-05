@@ -108,7 +108,13 @@ export const useNetworkStore = create<NetworkState>()(
 
     // Node actions
     addNode: (node) => {
-      set((state) => ({ nodes: [...state.nodes, node] }));
+      set((state) => {
+        // Prevent duplicates - check if node already exists
+        if (state.nodes.some(n => n.id === node.id)) {
+          return state; // Node already exists, don't add again
+        }
+        return { nodes: [...state.nodes, node] };
+      });
     },
 
     updateNode: (id, updates) => {
@@ -155,7 +161,13 @@ export const useNetworkStore = create<NetworkState>()(
 
     // Connection actions
     addConnection: (connection) => {
-      set((state) => ({ connections: [...state.connections, connection] }));
+      set((state) => {
+        // Prevent duplicates - check if connection already exists
+        if (state.connections.some(c => c.id === connection.id)) {
+          return state; // Connection already exists, don't add again
+        }
+        return { connections: [...state.connections, connection] };
+      });
     },
 
     removeConnection: (id) => {

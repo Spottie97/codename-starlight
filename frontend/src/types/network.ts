@@ -1,8 +1,11 @@
 // Network node types
-export type NodeType = 'PROBE' | 'ROUTER' | 'SWITCH' | 'SERVER' | 'GATEWAY' | 'VIRTUAL';
+export type NodeType = 'PROBE' | 'ROUTER' | 'SWITCH' | 'SERVER' | 'GATEWAY' | 'ACCESS_POINT' | 'FIREWALL' | 'VIRTUAL';
 
 // Status types
 export type Status = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'UNKNOWN';
+
+// Monitoring method types
+export type MonitoringMethod = 'MQTT' | 'PING' | 'SNMP' | 'HTTP' | 'NONE';
 
 // Network node interface
 export interface NetworkNode {
@@ -12,14 +15,28 @@ export interface NetworkNode {
   description: string | null;
   positionX: number;
   positionY: number;
+  
+  // Monitoring configuration
+  monitoringMethod: MonitoringMethod;
+  ipAddress: string | null;
+  pingInterval: number;
   mqttTopic: string | null;
+  snmpCommunity: string | null;
+  snmpVersion: string;
+  httpEndpoint: string | null;
+  httpExpectedCode: number;
+  
+  // Status
   status: Status;
   lastSeen: string | null;
   latency: number | null;
   internetStatus: Status;
   internetLastCheck: string | null;
+  
+  // Visual
   color: string;
   icon: string | null;
+  
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +67,18 @@ export interface CreateNodeDTO {
   description?: string;
   positionX?: number;
   positionY?: number;
+  
+  // Monitoring configuration
+  monitoringMethod?: MonitoringMethod;
+  ipAddress?: string;
+  pingInterval?: number;
   mqttTopic?: string;
+  snmpCommunity?: string;
+  snmpVersion?: '1' | '2c' | '3';
+  httpEndpoint?: string;
+  httpExpectedCode?: number;
+  
+  // Visual
   color?: string;
   icon?: string;
 }
@@ -61,9 +89,22 @@ export interface UpdateNodeDTO {
   description?: string | null;
   positionX?: number;
   positionY?: number;
+  
+  // Monitoring configuration
+  monitoringMethod?: MonitoringMethod;
+  ipAddress?: string | null;
+  pingInterval?: number;
   mqttTopic?: string | null;
+  snmpCommunity?: string | null;
+  snmpVersion?: '1' | '2c' | '3';
+  httpEndpoint?: string | null;
+  httpExpectedCode?: number;
+  
+  // Visual
   color?: string;
   icon?: string | null;
+  
+  // Status
   status?: Status;
   internetStatus?: Status;
 }
@@ -166,6 +207,8 @@ export const NODE_ICONS: Record<NodeType, string> = {
   SWITCH: 'git-branch',
   SERVER: 'server',
   GATEWAY: 'globe',
+  ACCESS_POINT: 'wifi',
+  FIREWALL: 'shield',
   VIRTUAL: 'box',
 };
 
@@ -184,7 +227,42 @@ export const NODE_TYPE_COLORS: Record<NodeType, string> = {
   SWITCH: '#ff6b35',
   SERVER: '#4F46E5',
   GATEWAY: '#14b8a6',
+  ACCESS_POINT: '#8b5cf6',
+  FIREWALL: '#ef4444',
   VIRTUAL: '#6b7280',
+};
+
+// Monitoring method labels
+export const MONITORING_METHOD_LABELS: Record<MonitoringMethod, string> = {
+  MQTT: 'MQTT (Push)',
+  PING: 'ICMP Ping',
+  SNMP: 'SNMP',
+  HTTP: 'HTTP Health Check',
+  NONE: 'None (Visual Only)',
+};
+
+// Node type labels for display
+export const NODE_TYPE_LABELS: Record<NodeType, string> = {
+  PROBE: 'Probe',
+  ROUTER: 'Router',
+  SWITCH: 'Switch',
+  SERVER: 'Server',
+  GATEWAY: 'Gateway',
+  ACCESS_POINT: 'Access Point',
+  FIREWALL: 'Firewall',
+  VIRTUAL: 'Virtual',
+};
+
+// Default monitoring methods per node type
+export const DEFAULT_MONITORING_METHOD: Record<NodeType, MonitoringMethod> = {
+  PROBE: 'MQTT',
+  ROUTER: 'PING',
+  SWITCH: 'PING',
+  SERVER: 'PING',
+  GATEWAY: 'PING',
+  ACCESS_POINT: 'PING',
+  FIREWALL: 'PING',
+  VIRTUAL: 'NONE',
 };
 
 
