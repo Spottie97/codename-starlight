@@ -11,7 +11,14 @@ import type {
   NetworkLayout,
 } from '../types/network';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// In development (port 8080), connect directly to backend on localhost:4000
+// In production, use relative URLs (same host)
+const API_BASE = (() => {
+  if (typeof window === 'undefined') return '';
+  return window.location.port === '8080' 
+    ? 'http://localhost:4000'  // Development: connect directly to backend
+    : '';  // Production: same host, use relative URLs
+})();
 
 /**
  * Fetch wrapper with error handling
@@ -231,6 +238,7 @@ export const healthApi = {
   check: () =>
     fetchApi<{ status: string; timestamp: string; service: string }>('/health'),
 };
+
 
 
 

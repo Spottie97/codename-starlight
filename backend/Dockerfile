@@ -1,10 +1,10 @@
 # Backend Dockerfile for Starlight Network Monitor
 
 # Development stage
-FROM node:20-alpine AS development
+FROM node:20-slim AS development
 
 # Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

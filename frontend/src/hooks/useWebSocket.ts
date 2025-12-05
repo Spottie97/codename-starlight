@@ -15,71 +15,37 @@ interface UseWebSocketReturn {
   reconnect: () => void;
 }
 
+// Determine WebSocket URL once at module load
+const WS_URL = (() => {
+  if (typeof window === 'undefined') return 'ws://localhost:4000/ws';
+  return window.location.port === '8080' 
+    ? 'ws://localhost:4000/ws'  // Development: connect directly to backend
+    : `ws://${window.location.host}/ws`;  // Production: same host
+})();
+
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
   const {
-    onMessage,
-    onConnect,
-    onDisconnect,
     reconnectInterval = 5000,
     maxReconnectAttempts = 10,
   } = options;
 
+  // Store callbacks in refs to avoid dependency issues
+  const onMessageRef = useRef(options.onMessage);
+  const onConnectRef = useRef(options.onConnect);
+  const onDisconnectRef = useRef(options.onDisconnect);
+  
+  // Update refs when callbacks change
+  useEffect(() => {
+    onMessageRef.current = options.onMessage;
+    onConnectRef.current = options.onConnect;
+    onDisconnectRef.current = options.onDisconnect;
+  }, [options.onMessage, options.onConnect, options.onDisconnect]);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isConnectingRef = useRef(false);
   const [isConnected, setIsConnected] = useState(false);
-
-  const wsUrl = import.meta.env.VITE_WS_URL 
-    ? `${import.meta.env.VITE_WS_URL}/ws`
-    : `ws://${window.location.host}/ws`;
-
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
-    }
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('🔌 WebSocket connected');
-        setIsConnected(true);
-        reconnectAttempts.current = 0;
-        onConnect?.();
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const message: WSMessage = JSON.parse(event.data);
-          onMessage?.(message);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('📴 WebSocket disconnected');
-        setIsConnected(false);
-        onDisconnect?.();
-
-        // Attempt to reconnect
-        if (reconnectAttempts.current < maxReconnectAttempts) {
-          reconnectAttempts.current++;
-          console.log(
-            `Reconnecting in ${reconnectInterval}ms... (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
-          );
-          reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-    } catch (error) {
-      console.error('Failed to create WebSocket:', error);
-    }
-  }, [wsUrl, onMessage, onConnect, onDisconnect, reconnectInterval, maxReconnectAttempts]);
 
   const send = useCallback((message: WSMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -89,30 +55,96 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, []);
 
+  // Connect on mount only
+  useEffect(() => {
+    let isMounted = true;
+
+    const connect = () => {
+      if (!isMounted || isConnectingRef.current) return;
+      if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+      isConnectingRef.current = true;
+
+      try {
+        console.log('🔌 Connecting to WebSocket:', WS_URL);
+        const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (!isMounted) {
+            ws.close();
+            return;
+          }
+          console.log('✅ WebSocket connected');
+          setIsConnected(true);
+          reconnectAttempts.current = 0;
+          isConnectingRef.current = false;
+          onConnectRef.current?.();
+        };
+
+        ws.onmessage = (event) => {
+          if (!isMounted) return;
+          try {
+            const message: WSMessage = JSON.parse(event.data);
+            onMessageRef.current?.(message);
+          } catch (error) {
+            console.error('Failed to parse WebSocket message:', error);
+          }
+        };
+
+        ws.onclose = () => {
+          if (!isMounted) return;
+          console.log('📴 WebSocket disconnected');
+          setIsConnected(false);
+          isConnectingRef.current = false;
+          onDisconnectRef.current?.();
+
+          // Attempt to reconnect
+          if (reconnectAttempts.current < maxReconnectAttempts) {
+            reconnectAttempts.current++;
+            console.log(
+              `Reconnecting in ${reconnectInterval}ms... (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
+            );
+            reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          isConnectingRef.current = false;
+        };
+      } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        isConnectingRef.current = false;
+      }
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [reconnectInterval, maxReconnectAttempts]); // Only these stable values
+
   const reconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
     if (wsRef.current) {
       wsRef.current.close();
+      wsRef.current = null;
     }
     reconnectAttempts.current = 0;
-    connect();
-  }, [connect]);
-
-  // Connect on mount
-  useEffect(() => {
-    connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
-  }, [connect]);
+    isConnectingRef.current = false;
+    // Trigger reconnect by closing the socket (onclose will handle reconnect)
+  }, []);
 
   return { isConnected, send, reconnect };
 }
@@ -131,6 +163,7 @@ export function useWSMessageHandler(
     }
   }, [messageTypes]);
 }
+
 
 
 
