@@ -56,3 +56,5 @@ prisma/migrations/.migration_lock.toml
 # Local data volumes (if not using Docker volumes)
 data/
 
+
+

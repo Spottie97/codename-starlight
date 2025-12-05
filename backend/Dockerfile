@@ -3,6 +3,9 @@
 # Development stage
 FROM node:20-alpine AS development
 
+# Install OpenSSL for Prisma
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # Install dependencies
@@ -21,8 +24,8 @@ COPY . .
 # Expose port
 EXPOSE 4000
 
-# Start development server
-CMD ["npm", "run", "dev"]
+# Start development server (regenerate prisma client on start)
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --skip-generate && npm run dev"]
 
 # Production build stage
 FROM node:20-alpine AS builder
@@ -30,7 +33,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY prisma ./prisma/
 RUN npx prisma generate
@@ -52,4 +55,5 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 4000
 
 CMD ["npm", "start"]
+
 

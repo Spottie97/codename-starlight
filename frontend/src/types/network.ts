@@ -187,3 +187,5 @@ export const NODE_TYPE_COLORS: Record<NodeType, string> = {
   VIRTUAL: '#6b7280',
 };
 
+
+

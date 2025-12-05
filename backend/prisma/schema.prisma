@@ -2,7 +2,8 @@
 // This schema defines the database structure for network topology and probe status
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -136,4 +137,5 @@ model NetworkLayout {
   
   @@index([isDefault])
 }
+
 

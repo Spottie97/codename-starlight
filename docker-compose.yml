@@ -1,13 +1,12 @@
-version: '3.8'
-
 services:
   # Frontend React Application
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     ports:
-      - "3000:3000"
+      - "8080:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -24,6 +23,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: development
     ports:
       - "4000:4000"
     volumes:
@@ -82,4 +82,5 @@ volumes:
   postgres_data:
   mqtt_data:
   mqtt_log:
+
 
