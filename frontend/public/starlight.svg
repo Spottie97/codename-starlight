@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="starGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#05d9e8"/>
+      <stop offset="100%" style="stop-color:#d300c5"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="45" fill="#0a0a0f" stroke="url(#starGradient)" stroke-width="2"/>
+  
+  <!-- Star shape -->
+  <polygon 
+    points="50,15 58,38 82,38 63,52 70,78 50,62 30,78 37,52 18,38 42,38" 
+    fill="url(#starGradient)" 
+    filter="url(#glow)"
+  />
+  
+  <!-- Inner circle (network node representation) -->
+  <circle cx="50" cy="48" r="8" fill="#0a0a0f" stroke="#39ff14" stroke-width="2"/>
+  <circle cx="50" cy="48" r="3" fill="#39ff14"/>
+  
+  <!-- Connection lines -->
+  <line x1="50" y1="56" x2="50" y2="70" stroke="#05d9e8" stroke-width="2" opacity="0.7"/>
+  <line x1="42" y1="48" x2="28" y2="48" stroke="#05d9e8" stroke-width="2" opacity="0.7"/>
+  <line x1="58" y1="48" x2="72" y2="48" stroke="#05d9e8" stroke-width="2" opacity="0.7"/>
+</svg>
+

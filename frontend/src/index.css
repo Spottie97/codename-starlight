@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+:root {
+  --neon-blue: #05d9e8;
+  --neon-pink: #ff2a6d;
+  --neon-green: #39ff14;
+  --neon-purple: #d300c5;
+  --dark-bg: #0a0a0f;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: 'Rajdhani', sans-serif;
+  background-color: var(--dark-bg);
+  color: #e0e0e0;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a25;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #32324a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #05d9e8;
+}
+
+/* Custom utility classes */
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+
+  .border-glow {
+    box-shadow: 0 0 10px currentColor, inset 0 0 10px rgba(5, 217, 232, 0.1);
+  }
+
+  .glass {
+    background: rgba(18, 18, 26, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(5, 217, 232, 0.2);
+  }
+
+  .glass-dark {
+    background: rgba(10, 10, 15, 0.9);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(5, 217, 232, 0.1);
+  }
+}
+
+/* Grid background pattern */
+.grid-bg {
+  background-image: 
+    linear-gradient(rgba(5, 217, 232, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(5, 217, 232, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Scanline effect */
+.scanline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
+  animation: scan 3s linear infinite;
+}
+
+@keyframes scan {
+  0% { top: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* Pulse animations for status indicators */
+.pulse-online {
+  animation: pulseGreen 2s ease-in-out infinite;
+}
+
+.pulse-offline {
+  animation: pulseRed 2s ease-in-out infinite;
+}
+
+.pulse-degraded {
+  animation: pulseYellow 2s ease-in-out infinite;
+}
+
+@keyframes pulseGreen {
+  0%, 100% { box-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14; }
+  50% { box-shadow: 0 0 15px #39ff14, 0 0 30px #39ff14; }
+}
+
+@keyframes pulseRed {
+  0%, 100% { box-shadow: 0 0 5px #ff2a6d, 0 0 10px #ff2a6d; }
+  50% { box-shadow: 0 0 15px #ff2a6d, 0 0 30px #ff2a6d; }
+}
+
+@keyframes pulseYellow {
+  0%, 100% { box-shadow: 0 0 5px #fffc00, 0 0 10px #fffc00; }
+  50% { box-shadow: 0 0 15px #fffc00, 0 0 30px #fffc00; }
+}
+
+/* Animated connection lines */
+.connection-line {
+  stroke-dasharray: 10 5;
+  animation: flowLine 1s linear infinite;
+}
+
+@keyframes flowLine {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -15; }
+}
+
+/* Button styles */
+.btn-cyber {
+  @apply relative px-6 py-2 font-display font-semibold uppercase tracking-wider;
+  @apply bg-transparent border-2 border-neon-blue text-neon-blue;
+  @apply transition-all duration-300 ease-out;
+  @apply hover:bg-neon-blue hover:text-dark-900 hover:shadow-neon-blue;
+}
+
+.btn-cyber-danger {
+  @apply relative px-6 py-2 font-display font-semibold uppercase tracking-wider;
+  @apply bg-transparent border-2 border-neon-pink text-neon-pink;
+  @apply transition-all duration-300 ease-out;
+  @apply hover:bg-neon-pink hover:text-dark-900 hover:shadow-neon-pink;
+}
+
+/* Input styles */
+.input-cyber {
+  @apply w-full px-4 py-2 bg-dark-800 border border-dark-500;
+  @apply text-white font-body placeholder-gray-500;
+  @apply focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue;
+  @apply transition-all duration-200;
+}
+
+/* Panel styles */
+.panel-cyber {
+  @apply bg-dark-800/90 backdrop-blur-md border border-dark-500;
+  @apply shadow-lg;
+}
+
+.panel-header {
+  @apply px-4 py-3 border-b border-dark-500;
+  @apply font-display text-lg font-semibold text-neon-blue uppercase tracking-wider;
+}
+
+/* Status badge */
+.status-badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold uppercase;
+}
+
+.status-online {
+  @apply bg-neon-green/20 text-neon-green border border-neon-green/30;
+}
+
+.status-offline {
+  @apply bg-neon-pink/20 text-neon-pink border border-neon-pink/30;
+}
+
+.status-degraded {
+  @apply bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/30;
+}
+
+.status-unknown {
+  @apply bg-gray-500/20 text-gray-400 border border-gray-500/30;
+}
+

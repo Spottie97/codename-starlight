@@ -1,0 +1,139 @@
+// Prisma Schema for Starlight Network Monitor
+// This schema defines the database structure for network topology and probe status
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Node types for the network
+enum NodeType {
+  PROBE       // Physical probe device (Arduino, ESP32, etc.)
+  ROUTER      // Network router
+  SWITCH      // Network switch
+  SERVER      // Server or computer
+  GATEWAY     // Internet gateway
+  VIRTUAL     // Virtual/logical grouping node
+}
+
+// Status of a node or probe
+enum Status {
+  ONLINE
+  OFFLINE
+  DEGRADED
+  UNKNOWN
+}
+
+// Network node - represents a device or location in the network
+model Node {
+  id          String   @id @default(uuid())
+  name        String
+  type        NodeType @default(PROBE)
+  description String?
+  
+  // Position on the canvas
+  positionX   Float    @default(0)
+  positionY   Float    @default(0)
+  
+  // MQTT configuration
+  mqttTopic   String?  @unique
+  
+  // Current status
+  status      Status   @default(UNKNOWN)
+  lastSeen    DateTime?
+  
+  // Network connectivity metrics
+  latency     Int?     // in milliseconds
+  
+  // Internet connectivity (separate from local network)
+  internetStatus    Status   @default(UNKNOWN)
+  internetLastCheck DateTime?
+  
+  // Visual customization
+  color       String   @default("#4F46E5")
+  icon        String?
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  outgoingConnections Connection[] @relation("SourceNode")
+  incomingConnections Connection[] @relation("TargetNode")
+  statusHistory       ProbeStatus[]
+  
+  @@index([status])
+  @@index([mqttTopic])
+}
+
+// Connection between nodes
+model Connection {
+  id           String   @id @default(uuid())
+  
+  sourceNodeId String
+  targetNodeId String
+  
+  sourceNode   Node     @relation("SourceNode", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode   Node     @relation("TargetNode", fields: [targetNodeId], references: [id], onDelete: Cascade)
+  
+  // Connection metadata
+  label        String?
+  bandwidth    String?  // e.g., "1Gbps", "100Mbps"
+  
+  // Visual properties
+  color        String   @default("#6B7280")
+  animated     Boolean  @default(true)
+  
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([sourceNodeId, targetNodeId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+// Historical probe status for analytics
+model ProbeStatus {
+  id        String   @id @default(uuid())
+  
+  nodeId    String
+  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  
+  status    Status
+  latency   Int?     // in milliseconds
+  
+  // Internet status at this point in time
+  internetStatus Status?
+  
+  // Additional metadata
+  message   String?
+  
+  timestamp DateTime @default(now())
+  
+  @@index([nodeId])
+  @@index([timestamp])
+  @@index([nodeId, timestamp])
+}
+
+// Network layout preset for saving/loading configurations
+model NetworkLayout {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  
+  // JSON blob containing the full network configuration
+  layoutData  Json
+  
+  isDefault   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isDefault])
+}
+
