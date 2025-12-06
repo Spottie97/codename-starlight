@@ -47,8 +47,6 @@ function NetworkMonitor() {
 
   // Handle WebSocket messages
   const handleWSMessage = (message: WSMessage) => {
-    console.log('WS Message:', message.type, message.payload);
-    
     switch (message.type) {
       case 'NODE_STATUS_UPDATE':
         updateNodeStatus(message.payload as NodeStatusUpdatePayload);
@@ -104,8 +102,6 @@ function NetworkMonitor() {
       case 'PING':
         // Heartbeat, ignore
         break;
-      default:
-        console.log('Unknown message type:', message.type);
     }
   };
 

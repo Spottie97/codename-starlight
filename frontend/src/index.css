@@ -73,15 +73,23 @@ body {
   }
 
   .glass {
-    background: rgba(18, 18, 26, 0.8);
-    backdrop-filter: blur(10px);
+    background: rgba(18, 18, 26, 0.95);
     border: 1px solid rgba(5, 217, 232, 0.2);
   }
 
   .glass-dark {
-    background: rgba(10, 10, 15, 0.9);
-    backdrop-filter: blur(15px);
+    background: rgba(10, 10, 15, 0.97);
     border: 1px solid rgba(5, 217, 232, 0.1);
+  }
+  
+  /* Only enable blur on capable devices */
+  @supports (backdrop-filter: blur(10px)) {
+    @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+      .glass-blur {
+        background: rgba(18, 18, 26, 0.8);
+        backdrop-filter: blur(10px);
+      }
+    }
   }
 }
 
@@ -93,62 +101,97 @@ body {
   background-size: 50px 50px;
 }
 
-/* Scanline effect */
-.scanline::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
-  animation: scan 3s linear infinite;
+/* Scanline effect - only on devices that prefer motion */
+@media (prefers-reduced-motion: no-preference) {
+  .scanline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
+    animation: scan 3s linear infinite;
+  }
+
+  @keyframes scan {
+    0% { top: 0; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
 }
 
-@keyframes scan {
-  0% { top: 0; opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
+/* Disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-/* Pulse animations for status indicators */
-.pulse-online {
-  animation: pulseGreen 2s ease-in-out infinite;
+/* Pulse animations for status indicators - simplified for performance */
+@media (prefers-reduced-motion: no-preference) {
+  .pulse-online {
+    animation: pulseGreen 2s ease-in-out infinite;
+  }
+
+  .pulse-offline {
+    animation: pulseRed 2s ease-in-out infinite;
+  }
+
+  .pulse-degraded {
+    animation: pulseYellow 2s ease-in-out infinite;
+  }
 }
 
-.pulse-offline {
-  animation: pulseRed 2s ease-in-out infinite;
-}
-
-.pulse-degraded {
-  animation: pulseYellow 2s ease-in-out infinite;
+/* Static glow for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-online {
+    box-shadow: 0 0 8px #39ff14;
+  }
+  .pulse-offline {
+    box-shadow: 0 0 8px #ff2a6d;
+  }
+  .pulse-degraded {
+    box-shadow: 0 0 8px #fffc00;
+  }
 }
 
 @keyframes pulseGreen {
   0%, 100% { box-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14; }
-  50% { box-shadow: 0 0 15px #39ff14, 0 0 30px #39ff14; }
+  50% { box-shadow: 0 0 15px #39ff14, 0 0 20px #39ff14; }
 }
 
 @keyframes pulseRed {
   0%, 100% { box-shadow: 0 0 5px #ff2a6d, 0 0 10px #ff2a6d; }
-  50% { box-shadow: 0 0 15px #ff2a6d, 0 0 30px #ff2a6d; }
+  50% { box-shadow: 0 0 15px #ff2a6d, 0 0 20px #ff2a6d; }
 }
 
 @keyframes pulseYellow {
   0%, 100% { box-shadow: 0 0 5px #fffc00, 0 0 10px #fffc00; }
-  50% { box-shadow: 0 0 15px #fffc00, 0 0 30px #fffc00; }
+  50% { box-shadow: 0 0 15px #fffc00, 0 0 20px #fffc00; }
 }
 
-/* Animated connection lines */
-.connection-line {
-  stroke-dasharray: 10 5;
-  animation: flowLine 1s linear infinite;
+/* Animated connection lines - only with motion preference */
+@media (prefers-reduced-motion: no-preference) {
+  .connection-line {
+    stroke-dasharray: 10 5;
+    animation: flowLine 1s linear infinite;
+  }
+
+  @keyframes flowLine {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -15; }
+  }
 }
 
-@keyframes flowLine {
-  0% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -15; }
+/* Static dashed line for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .connection-line {
+    stroke-dasharray: 10 5;
+  }
 }
 
 /* Button styles */

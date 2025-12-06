@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer } from 'react-konva';
 import { 
   Radio, 
@@ -23,6 +23,15 @@ import { nodesApi, connectionsApi, groupsApi, groupConnectionsApi } from '../../
 import type { CreateNodeDTO, NetworkNode as INetworkNode, NodeType, NodeGroup, CreateGroupDTO } from '../../types/network';
 import { NODE_TYPE_COLORS, DEFAULT_MONITORING_METHOD, NODE_TYPE_LABELS, GROUP_COLORS } from '../../types/network';
 import { cn } from '../../lib/utils';
+
+// Debounce helper for position saves
+function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
 
 // Node type options for the selector
 const NODE_TYPE_OPTIONS: { value: NodeType; label: string; icon: React.ReactNode; description: string }[] = [
@@ -266,17 +275,23 @@ export function NetworkCanvas() {
     }
   }, [editorMode, connectingFromId, setSelectedNode, startConnecting, addConnection, cancelConnecting, removeNode]);
 
+  // Debounced API save for node positions (300ms delay)
+  const debouncedSaveNodePosition = useMemo(
+    () => debounce(async (nodeId: string, x: number, y: number) => {
+      try {
+        await nodesApi.updatePosition(nodeId, x, y);
+      } catch (error) {
+        console.error('Failed to save position:', error);
+      }
+    }, 300),
+    []
+  );
+
   // Handle node drag
-  const handleNodeDrag = useCallback(async (nodeId: string, x: number, y: number) => {
+  const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
     updateNodePosition(nodeId, x, y);
-    
-    // Debounced save to API
-    try {
-      await nodesApi.updatePosition(nodeId, x, y);
-    } catch (error) {
-      console.error('Failed to save position:', error);
-    }
-  }, [updateNodePosition]);
+    debouncedSaveNodePosition(nodeId, x, y);
+  }, [updateNodePosition, debouncedSaveNodePosition]);
 
   // Handle connection click
   const handleConnectionClick = useCallback(async (connectionId: string) => {
@@ -403,8 +418,26 @@ export function NetworkCanvas() {
     return null;
   }, [groups]);
 
+  // Debounced group assignment check
+  const debouncedGroupAssignment = useMemo(
+    () => debounce(async (nodeId: string, nodeName: string, newGroupId: string | null, currentGroupId: string | null) => {
+      if (newGroupId !== currentGroupId) {
+        try {
+          if (newGroupId) {
+            await groupsApi.assignNode(newGroupId, nodeId);
+          } else if (currentGroupId) {
+            await groupsApi.unassignNode(currentGroupId, nodeId);
+          }
+        } catch (error) {
+          console.error('Failed to update group assignment:', error);
+        }
+      }
+    }, 500),
+    []
+  );
+
   // Handle node drag with group assignment
-  const handleNodeDragWithGroup = useCallback(async (node: INetworkNode, x: number, y: number) => {
+  const handleNodeDragWithGroup = useCallback((node: INetworkNode, x: number, y: number) => {
     updateNodePosition(node.id, x, y);
     
     // Check if node is now inside a group
@@ -415,31 +448,15 @@ export function NetworkCanvas() {
     const currentNode = nodes.find(n => n.id === node.id);
     const currentGroupId = currentNode?.groupId || null;
     
-    // If group assignment changed, update it
+    // If group assignment changed, update it locally immediately
     if (newGroupId !== currentGroupId) {
-      console.log(`Node "${node.name}" group change: ${currentGroupId} -> ${newGroupId}`);
       assignNodeToGroup(node.id, newGroupId);
-      
-      try {
-        if (newGroupId) {
-          // Assign to new group
-          await groupsApi.assignNode(newGroupId, node.id);
-        } else if (currentGroupId) {
-          // Unassign from previous group
-          await groupsApi.unassignNode(currentGroupId, node.id);
-        }
-      } catch (error) {
-        console.error('Failed to update group assignment:', error);
-      }
     }
     
-    // Save position to API
-    try {
-      await nodesApi.updatePosition(node.id, x, y);
-    } catch (error) {
-      console.error('Failed to save position:', error);
-    }
-  }, [updateNodePosition, findGroupAtPosition, assignNodeToGroup, nodes]);
+    // Debounced API calls
+    debouncedGroupAssignment(node.id, node.name, newGroupId, currentGroupId);
+    debouncedSaveNodePosition(node.id, x, y);
+  }, [updateNodePosition, findGroupAtPosition, assignNodeToGroup, nodes, debouncedGroupAssignment, debouncedSaveNodePosition]);
 
   // Get cursor based on mode
   const getCursor = () => {
