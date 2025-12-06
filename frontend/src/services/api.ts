@@ -16,6 +16,7 @@ import type {
   ProbeStatusSummary,
   NetworkLayout,
 } from '../types/network';
+import { getAuthToken, clearAuth } from '../context/AuthContext';
 
 // In development (port 8080), connect directly to backend on localhost:4000
 // In production, use relative URLs (same host)
@@ -27,20 +28,39 @@ const API_BASE = (() => {
 })();
 
 /**
- * Fetch wrapper with error handling
+ * Fetch wrapper with error handling and authentication
  */
 async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<ApiResponse<T>> {
   try {
+    // Get auth token
+    const token = getAuthToken();
+    
+    // Build headers with auth token
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    };
+    
+    if (token) {
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    }
+    
     const response = await fetch(`${API_BASE}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
       ...options,
+      headers,
     });
+
+    // Handle 401 Unauthorized - clear auth and redirect to login
+    if (response.status === 401) {
+      clearAuth();
+      return {
+        success: false,
+        error: 'Unauthorized - please log in again',
+      };
+    }
 
     const data = await response.json();
 

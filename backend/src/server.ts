@@ -10,6 +10,8 @@ import { probesRouter } from './routes/probes';
 import { networkRouter } from './routes/network';
 import { groupsRouter } from './routes/groups';
 import { groupConnectionsRouter } from './routes/groupConnections';
+import { authRouter } from './routes/auth';
+import { authMiddleware } from './middleware/auth';
 import { initWebSocketServer } from './services/websocketService';
 import { initMqttService } from './services/mqttService';
 import { startMonitoringScheduler, stopMonitoringScheduler } from './services/monitoringService';
@@ -31,7 +33,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Health check endpoint
+// Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -40,7 +42,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes
+// Auth routes (no auth required)
+app.use('/api/auth', authRouter);
+
+// Apply auth middleware to all protected routes
+app.use('/api', authMiddleware);
+
+// Protected API Routes
 app.use('/api/nodes', nodesRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api/probes', probesRouter);

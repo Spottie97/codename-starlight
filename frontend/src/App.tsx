@@ -6,9 +6,12 @@ import { StatusPanel } from './components/StatusPanel/StatusPanel';
 import { Toolbar } from './components/Toolbar/Toolbar';
 import { NodeEditor } from './components/NodeEditor/NodeEditor';
 import { GroupEditor } from './components/GroupEditor/GroupEditor';
+import { Login } from './components/Login';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LogOut, Loader2 } from 'lucide-react';
 import type { WSMessage, NodeStatusUpdatePayload, BatchStatusUpdatePayload, NodeGroup, GroupConnection } from './types/network';
 
-function App() {
+function NetworkMonitor() {
   const { 
     fetchNetwork, 
     setWsConnected,
@@ -94,6 +97,8 @@ function App() {
     }
   };
 
+  const { logout } = useAuth();
+
   const { isConnected } = useWebSocket({
     onMessage: handleWSMessage,
     onConnect: () => setWsConnected(true),
@@ -128,6 +133,17 @@ function App() {
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
           </div>
+          
+          {/* Logout button */}
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-neon-pink 
+                     border border-dark-500 hover:border-neon-pink/50 rounded transition-all duration-200"
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
         </div>
       </header>
 
@@ -151,6 +167,42 @@ function App() {
       {/* Scanline effect */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden scanline opacity-20" />
     </div>
+  );
+}
+
+// Loading screen while checking auth
+function LoadingScreen() {
+  return (
+    <div className="h-screen w-screen flex items-center justify-center bg-dark-900 grid-bg">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-12 h-12 text-neon-blue animate-spin" />
+        <p className="text-gray-400 font-body">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main app wrapper that handles auth state
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <NetworkMonitor />;
+}
+
+// Root component with auth provider
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
