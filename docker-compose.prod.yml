@@ -1,0 +1,85 @@
+# Production Docker Compose for Starlight Network Monitor
+# Use this for homelab/server deployments
+#
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # Frontend - Production build with nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "${STARLIGHT_PORT:-8080}:80"
+    depends_on:
+      - backend
+    networks:
+      - starlight-network
+    restart: unless-stopped
+
+  # Backend - Production build
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "${STARLIGHT_API_PORT:-4000}:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=postgresql://starlight:starlight@postgres:5432/starlight_db
+      - MQTT_BROKER_URL=mqtt://mqtt-broker:1883
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mqtt-broker:
+        condition: service_started
+    networks:
+      - starlight-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "${STARLIGHT_DB_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=starlight
+      - POSTGRES_PASSWORD=starlight
+      - POSTGRES_DB=starlight_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U starlight -d starlight_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - starlight-network
+    restart: unless-stopped
+
+  # Mosquitto MQTT Broker
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${STARLIGHT_MQTT_PORT:-1883}:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt-broker/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    networks:
+      - starlight-network
+    restart: unless-stopped
+
+networks:
+  starlight-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mqtt_data:
+  mqtt_log:
+

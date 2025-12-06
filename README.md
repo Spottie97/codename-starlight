@@ -45,23 +45,30 @@ A local network monitoring tool with a game-like visualization interface. Monito
 
 - Docker and Docker Compose
 
-### One-Command Install
+### One-Command Install (Production)
 
-Copy and paste this command to download and start Starlight:
+Copy and paste this command to download and start Starlight on your server:
 
 ```bash
-curl -L https://github.com/Spottie97/codename-starlight/archive/refs/heads/main.tar.gz | tar xz && cd codename-starlight-main && docker compose up -d
+curl -L https://github.com/Spottie97/codename-starlight/archive/refs/heads/main.tar.gz | tar xz && cd codename-starlight-main && docker compose -f docker-compose.prod.yml up -d
 ```
 
-That's it! The application will start and guide you through the initial setup.
+This uses the **production build** which is optimized for performance and stability.
 
 ### Alternative: Clone with Git
 
 ```bash
 git clone https://github.com/Spottie97/codename-starlight.git
 cd codename-starlight
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Development Mode (for contributors)
+
+```bash
 docker compose up -d
 ```
+Note: Development mode has hot-reloading but is slower and may cause session issues.
 
 **First-time Setup:**
 1. Open http://localhost:8080 in your browser
@@ -76,23 +83,23 @@ docker compose up -d
 
 **Using a Different Port (if 8080 is already in use):**
 ```bash
-STARLIGHT_PORT=3000 docker compose up -d
+STARLIGHT_PORT=3000 docker compose -f docker-compose.prod.yml up -d
 ```
 Then access the UI at `http://localhost:3000`
 
 **To stop:**
 ```bash
-docker compose down
+docker compose -f docker-compose.prod.yml down
 ```
 
 **To completely clean up (including data):**
 ```bash
-docker compose down -v
+docker compose -f docker-compose.prod.yml down -v
 ```
 
 **Fresh Install (if upgrading or reinstalling):**
 ```bash
-docker compose down -v && docker compose up -d
+docker compose -f docker-compose.prod.yml down -v && docker compose -f docker-compose.prod.yml up -d
 ```
 This removes old database data and starts fresh with the setup wizard.
 
@@ -109,7 +116,7 @@ If you have port conflicts, you can customize the ports using environment variab
 
 Example with custom ports:
 ```bash
-STARLIGHT_PORT=3000 STARLIGHT_MQTT_PORT=1884 docker compose up -d
+STARLIGHT_PORT=3000 STARLIGHT_MQTT_PORT=1884 docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### Application Settings

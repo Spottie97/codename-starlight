@@ -32,7 +32,7 @@ export function verifyToken(token: string, password: string, secret: string): bo
 // Cache for token validation to reduce DB queries
 // Maps token -> { valid: boolean, timestamp: number }
 const tokenCache = new Map<string, { valid: boolean; timestamp: number }>();
-const TOKEN_CACHE_TTL_MS = 60000; // 1 minute cache
+const TOKEN_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hour cache - tokens valid until password/secret changes
 
 /**
  * Clear the token cache (call after password change)
