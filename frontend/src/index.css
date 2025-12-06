@@ -350,3 +350,50 @@ body.animation-off::after {
   background: var(--neon-pink);
 }
 
+/* Auto-performance mode - same as animation-off but with yellow indicator */
+body.auto-performance-mode *,
+body.auto-performance-mode *::before,
+body.auto-performance-mode *::after {
+  animation: none !important;
+}
+
+body.auto-performance-mode .pulse-online,
+body.auto-performance-mode .pulse-offline,
+body.auto-performance-mode .pulse-degraded {
+  animation: none !important;
+}
+
+body.auto-performance-mode .connection-line {
+  animation: none !important;
+}
+
+body.auto-performance-mode .scanline::before {
+  animation: none !important;
+  display: none;
+}
+
+/* Static glow for auto-performance mode */
+body.auto-performance-mode .pulse-online {
+  box-shadow: 0 0 8px #39ff14;
+}
+
+body.auto-performance-mode .pulse-offline {
+  box-shadow: 0 0 8px #ff2a6d;
+}
+
+body.auto-performance-mode .pulse-degraded {
+  box-shadow: 0 0 8px #fffc00;
+}
+
+/* Auto-performance indicator - yellow/orange */
+body.auto-performance-mode::after {
+  content: '⚡';
+  position: fixed;
+  top: 2px;
+  right: 8px;
+  font-size: 12px;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 9999;
+}
+

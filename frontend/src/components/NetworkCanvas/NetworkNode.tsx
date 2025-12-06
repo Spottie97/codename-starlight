@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
 import { Group, Circle, Text, Ring, Rect, RegularPolygon, Line } from 'react-konva';
 import Konva from 'konva';
 import type { NetworkNode as INetworkNode, EditorMode, MonitoringMethod } from '../../types/network';
@@ -36,7 +36,33 @@ interface NetworkNodeProps {
   editorMode: EditorMode;
 }
 
-export function NetworkNode({
+// Custom comparison function for memoization
+function arePropsEqual(prevProps: NetworkNodeProps, nextProps: NetworkNodeProps): boolean {
+  // Check primitive props first (fast)
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.isConnecting !== nextProps.isConnecting) return false;
+  if (prevProps.editorMode !== nextProps.editorMode) return false;
+  
+  // Check if node data that affects rendering changed
+  const prevNode = prevProps.node;
+  const nextNode = nextProps.node;
+  
+  if (prevNode.id !== nextNode.id) return false;
+  if (prevNode.positionX !== nextNode.positionX) return false;
+  if (prevNode.positionY !== nextNode.positionY) return false;
+  if (prevNode.status !== nextNode.status) return false;
+  if (prevNode.internetStatus !== nextNode.internetStatus) return false;
+  if (prevNode.latency !== nextNode.latency) return false;
+  if (prevNode.name !== nextNode.name) return false;
+  if (prevNode.type !== nextNode.type) return false;
+  if (prevNode.color !== nextNode.color) return false;
+  if (prevNode.monitoringMethod !== nextNode.monitoringMethod) return false;
+  
+  // Functions are stable if passed from memoized parent
+  return true;
+}
+
+export const NetworkNode = memo(function NetworkNode({
   node,
   isSelected,
   isConnecting,
@@ -530,8 +556,4 @@ export function NetworkNode({
       )}
     </Group>
   );
-}
-
-
-
-
+}, arePropsEqual);

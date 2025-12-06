@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, memo } from 'react';
 import { Group, Rect, Text, Circle } from 'react-konva';
 import Konva from 'konva';
 import type { NodeGroup, EditorMode } from '../../types/network';
@@ -20,7 +20,29 @@ const HEADER_HEIGHT = 28;
 const CORNER_RADIUS = 8;
 const RESIZE_HANDLE_SIZE = 12;
 
-export function GroupZone({
+// Custom comparison function for memoization
+function areGroupPropsEqual(prevProps: GroupZoneProps, nextProps: GroupZoneProps): boolean {
+  // Check primitive props
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.isConnecting !== nextProps.isConnecting) return false;
+  if (prevProps.editorMode !== nextProps.editorMode) return false;
+  
+  // Check group data that affects rendering
+  const prevGroup = prevProps.group;
+  const nextGroup = nextProps.group;
+  if (prevGroup.id !== nextGroup.id) return false;
+  if (prevGroup.positionX !== nextGroup.positionX) return false;
+  if (prevGroup.positionY !== nextGroup.positionY) return false;
+  if (prevGroup.width !== nextGroup.width) return false;
+  if (prevGroup.height !== nextGroup.height) return false;
+  if (prevGroup.name !== nextGroup.name) return false;
+  if (prevGroup.color !== nextGroup.color) return false;
+  if (prevGroup.opacity !== nextGroup.opacity) return false;
+  
+  return true;
+}
+
+export const GroupZone = memo(function GroupZone({
   group,
   isSelected,
   isConnecting = false,
@@ -262,7 +284,7 @@ export function GroupZone({
       />
     </Group>
   );
-}
+}, areGroupPropsEqual);
 
 // Helper function to convert hex to rgba
 function hexToRgba(hex: string, opacity: number): string {

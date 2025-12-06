@@ -22,6 +22,9 @@ import {
   usePerformanceSettings, 
   setAnimationMode, 
   setGlowEffectsEnabled,
+  setAutoReduceAnimations,
+  setAutoReduceThreshold,
+  useAutoReduceStatus,
   type AnimationMode 
 } from '../../hooks/useGlobalAnimation';
 
@@ -91,6 +94,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
   // Performance tab state (local settings from hook)
   const perfSettings = usePerformanceSettings();
+  const isAutoReduceActive = useAutoReduceStatus();
   
   // Performance tab state (server settings)
   const [monitoringInterval, setMonitoringInterval] = useState('60000');
@@ -891,7 +895,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                       </div>
 
                       {/* Glow Effects */}
-                      <div>
+                      <div className="mb-6">
                         <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
                           Glow Effects
                         </label>
@@ -913,6 +917,55 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                         </div>
                         <p className="mt-2 text-xs text-gray-500">
                           Disable to reduce GPU usage from shadow and blur effects
+                        </p>
+                      </div>
+
+                      {/* Auto-reduce for large networks */}
+                      <div className="mb-6">
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
+                          Auto-Reduce for Large Networks
+                        </label>
+                        <div className="flex items-center gap-4 mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setAutoReduceAnimations(!perfSettings.autoReduceAnimations)}
+                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors
+                              ${perfSettings.autoReduceAnimations ? 'bg-neon-blue' : 'bg-dark-600'}`}
+                          >
+                            <span
+                              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform
+                                ${perfSettings.autoReduceAnimations ? 'translate-x-7' : 'translate-x-1'}`}
+                            />
+                          </button>
+                          <span className="text-sm text-gray-400">
+                            {perfSettings.autoReduceAnimations ? 'Enabled' : 'Disabled'}
+                          </span>
+                          {isAutoReduceActive && (
+                            <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 font-display">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
+                        {perfSettings.autoReduceAnimations && (
+                          <div className="mt-3">
+                            <label className="block text-xs font-display text-gray-500 uppercase tracking-wide mb-2">
+                              Node Threshold
+                            </label>
+                            <input
+                              type="number"
+                              value={perfSettings.autoReduceThreshold}
+                              onChange={(e) => setAutoReduceThreshold(parseInt(e.target.value, 10) || 50)}
+                              min="10"
+                              max="500"
+                              className="w-32 px-3 py-2 bg-dark-800 border border-dark-500 rounded
+                                       text-white font-body text-sm
+                                       focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue"
+                            />
+                            <span className="ml-2 text-sm text-gray-500">nodes</span>
+                          </div>
+                        )}
+                        <p className="mt-2 text-xs text-gray-500">
+                          Automatically disable animations when the network has more nodes than the threshold
                         </p>
                       </div>
                     </div>

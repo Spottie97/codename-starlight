@@ -14,6 +14,7 @@ import {
   Network
 } from 'lucide-react';
 import { useNetworkStore, selectNodes, selectConnections, selectGroups, selectGroupConnections, selectEditorMode, selectCanvasState } from '../../store/networkStore';
+import { updateNodeCount } from '../../hooks/useGlobalAnimation';
 import { NetworkNode } from './NetworkNode';
 import { ConnectionLine } from './ConnectionLine';
 import { GroupConnectionLine } from './GroupConnectionLine';
@@ -91,6 +92,156 @@ export function NetworkCanvas() {
     removeGroupConnection,
   } = useNetworkStore();
 
+  // Pre-compute node lookup map for O(1) access (used by connections)
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, INetworkNode>();
+    for (const node of nodes) {
+      map.set(node.id, node);
+    }
+    return map;
+  }, [nodes]);
+
+  // Memoize sorted groups (prevents re-sorting on every render)
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => a.zIndex - b.zIndex);
+  }, [groups]);
+
+  // Memoize filtered connections with valid source/target nodes
+  const validConnections = useMemo(() => {
+    return connections.filter(conn => {
+      return nodeMap.has(conn.sourceNodeId) && nodeMap.has(conn.targetNodeId);
+    });
+  }, [connections, nodeMap]);
+
+  // Memoize filtered group connections with valid source/target groups
+  const validGroupConnections = useMemo(() => {
+    const groupSet = new Set(groups.map(g => g.id));
+    return groupConnections.filter(conn => {
+      return groupSet.has(conn.sourceGroupId) && groupSet.has(conn.targetGroupId);
+    });
+  }, [groupConnections, groups]);
+
+  // Memoize group lookup map for O(1) access
+  const groupMap = useMemo(() => {
+    const map = new Map<string, NodeGroup>();
+    for (const group of groups) {
+      map.set(group.id, group);
+    }
+    return map;
+  }, [groups]);
+
+  // Calculate visible viewport bounds (in canvas coordinates) for culling
+  // Add padding to avoid pop-in effects at edges
+  const VIEWPORT_PADDING = 100; // Extra pixels outside viewport to render
+  const visibleBounds = useMemo(() => {
+    const minX = -canvas.offsetX / canvas.scale - VIEWPORT_PADDING;
+    const minY = -canvas.offsetY / canvas.scale - VIEWPORT_PADDING;
+    const maxX = (dimensions.width - canvas.offsetX) / canvas.scale + VIEWPORT_PADDING;
+    const maxY = (dimensions.height - canvas.offsetY) / canvas.scale + VIEWPORT_PADDING;
+    return { minX, minY, maxX, maxY };
+  }, [canvas.offsetX, canvas.offsetY, canvas.scale, dimensions.width, dimensions.height]);
+
+  // Helper to check if a point is within visible bounds
+  const isPointVisible = useCallback((x: number, y: number, padding: number = 50) => {
+    return (
+      x >= visibleBounds.minX - padding &&
+      x <= visibleBounds.maxX + padding &&
+      y >= visibleBounds.minY - padding &&
+      y <= visibleBounds.maxY + padding
+    );
+  }, [visibleBounds]);
+
+  // Helper to check if a rectangle intersects visible bounds
+  const isRectVisible = useCallback((x: number, y: number, width: number, height: number) => {
+    return !(
+      x + width < visibleBounds.minX ||
+      x > visibleBounds.maxX ||
+      y + height < visibleBounds.minY ||
+      y > visibleBounds.maxY
+    );
+  }, [visibleBounds]);
+
+  // Helper to check if a line segment intersects visible bounds
+  const isLineVisible = useCallback((x1: number, y1: number, x2: number, y2: number) => {
+    // If either endpoint is visible, the line is visible
+    if (isPointVisible(x1, y1, 0) || isPointVisible(x2, y2, 0)) return true;
+    
+    // Check if line intersects the viewport rectangle
+    // Simple bounding box check for performance
+    const lineMinX = Math.min(x1, x2);
+    const lineMaxX = Math.max(x1, x2);
+    const lineMinY = Math.min(y1, y2);
+    const lineMaxY = Math.max(y1, y2);
+    
+    return !(
+      lineMaxX < visibleBounds.minX ||
+      lineMinX > visibleBounds.maxX ||
+      lineMaxY < visibleBounds.minY ||
+      lineMinY > visibleBounds.maxY
+    );
+  }, [visibleBounds, isPointVisible]);
+
+  // Filter nodes to only those visible in viewport
+  const visibleNodes = useMemo(() => {
+    return nodes.filter(node => isPointVisible(node.positionX, node.positionY));
+  }, [nodes, isPointVisible]);
+
+  // Filter groups to only those visible in viewport
+  const visibleGroups = useMemo(() => {
+    return sortedGroups.filter(group => 
+      isRectVisible(group.positionX, group.positionY, group.width, group.height)
+    );
+  }, [sortedGroups, isRectVisible]);
+
+  // Set of visible node IDs for connection filtering
+  const visibleNodeIds = useMemo(() => {
+    return new Set(visibleNodes.map(n => n.id));
+  }, [visibleNodes]);
+
+  // Set of visible group IDs for group connection filtering
+  const visibleGroupIds = useMemo(() => {
+    return new Set(visibleGroups.map(g => g.id));
+  }, [visibleGroups]);
+
+  // Filter connections to only those where at least one endpoint is visible
+  // or the line itself crosses the viewport
+  const visibleConnections = useMemo(() => {
+    return validConnections.filter(conn => {
+      // Quick check: if both nodes are visible, connection is visible
+      if (visibleNodeIds.has(conn.sourceNodeId) || visibleNodeIds.has(conn.targetNodeId)) {
+        return true;
+      }
+      
+      // Check if line crosses viewport (for connections between off-screen nodes)
+      const source = nodeMap.get(conn.sourceNodeId);
+      const target = nodeMap.get(conn.targetNodeId);
+      if (source && target) {
+        return isLineVisible(source.positionX, source.positionY, target.positionX, target.positionY);
+      }
+      return false;
+    });
+  }, [validConnections, visibleNodeIds, nodeMap, isLineVisible]);
+
+  // Filter group connections similarly
+  const visibleGroupConnections = useMemo(() => {
+    return validGroupConnections.filter(conn => {
+      if (visibleGroupIds.has(conn.sourceGroupId) || visibleGroupIds.has(conn.targetGroupId)) {
+        return true;
+      }
+      
+      const source = groupMap.get(conn.sourceGroupId);
+      const target = groupMap.get(conn.targetGroupId);
+      if (source && target) {
+        const sx = source.positionX + source.width / 2;
+        const sy = source.positionY + source.height / 2;
+        const tx = target.positionX + target.width / 2;
+        const ty = target.positionY + target.height / 2;
+        return isLineVisible(sx, sy, tx, ty);
+      }
+      return false;
+    });
+  }, [validGroupConnections, visibleGroupIds, groupMap, isLineVisible]);
+
   // Handle resize
   useEffect(() => {
     const updateDimensions = () => {
@@ -106,6 +257,11 @@ export function NetworkCanvas() {
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  // Track node count for auto-reduce animations feature
+  useEffect(() => {
+    updateNodeCount(nodes.length);
+  }, [nodes.length]);
 
   // Close pending node selector on ESC
   useEffect(() => {
@@ -502,30 +658,26 @@ export function NetworkCanvas() {
 
         {/* Layer 2: All interactive elements (consolidated for performance) */}
         {/* Rendering order: Groups -> Group Connections -> Node Connections -> Nodes */}
+        {/* Viewport culling: only render elements within visible bounds */}
         <Layer>
-          {/* Groups (rendered first, appear behind everything) */}
-          {groups
-            .slice()
-            .sort((a, b) => a.zIndex - b.zIndex)
-            .map((group) => (
-              <GroupZone
-                key={group.id}
-                group={group}
-                isSelected={selectedGroupId === group.id}
-                isConnecting={connectingFromGroupId === group.id}
-                onClick={() => handleGroupClick(group)}
-                onDragEnd={(x, y) => handleGroupDrag(group.id, x, y)}
-                onResize={(w, h) => handleGroupResize(group.id, w, h)}
-                editorMode={editorMode}
-              />
-            ))}
+          {/* Groups (rendered first, appear behind everything) - viewport culled */}
+          {visibleGroups.map((group) => (
+            <GroupZone
+              key={group.id}
+              group={group}
+              isSelected={selectedGroupId === group.id}
+              isConnecting={connectingFromGroupId === group.id}
+              onClick={() => handleGroupClick(group)}
+              onDragEnd={(x, y) => handleGroupDrag(group.id, x, y)}
+              onResize={(w, h) => handleGroupResize(group.id, w, h)}
+              editorMode={editorMode}
+            />
+          ))}
 
-          {/* Group Connections */}
-          {groupConnections.map((connection) => {
-            const sourceGroup = groups.find(g => g.id === connection.sourceGroupId);
-            const targetGroup = groups.find(g => g.id === connection.targetGroupId);
-            
-            if (!sourceGroup || !targetGroup) return null;
+          {/* Group Connections - viewport culled with O(1) lookups */}
+          {visibleGroupConnections.map((connection) => {
+            const sourceGroup = groupMap.get(connection.sourceGroupId)!;
+            const targetGroup = groupMap.get(connection.targetGroupId)!;
 
             return (
               <GroupConnectionLine
@@ -540,12 +692,10 @@ export function NetworkCanvas() {
             );
           })}
 
-          {/* Node Connections */}
-          {connections.map((connection) => {
-            const sourceNode = nodes.find(n => n.id === connection.sourceNodeId);
-            const targetNode = nodes.find(n => n.id === connection.targetNodeId);
-            
-            if (!sourceNode || !targetNode) return null;
+          {/* Node Connections - viewport culled with O(1) lookups */}
+          {visibleConnections.map((connection) => {
+            const sourceNode = nodeMap.get(connection.sourceNodeId)!;
+            const targetNode = nodeMap.get(connection.targetNodeId)!;
 
             return (
               <ConnectionLine
@@ -559,8 +709,8 @@ export function NetworkCanvas() {
             );
           })}
 
-          {/* Nodes (rendered last, appear on top) */}
-          {nodes.map((node) => (
+          {/* Nodes (rendered last, appear on top) - viewport culled */}
+          {visibleNodes.map((node) => (
             <NetworkNode
               key={node.id}
               node={node}

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import { Group, Line, Circle, Text, Rect } from 'react-konva';
 import Konva from 'konva';
 import type { Connection, NetworkNode } from '../../types/network';
@@ -16,7 +16,41 @@ interface ConnectionLineProps {
   isDeleteMode: boolean;
 }
 
-export function ConnectionLine({
+// Custom comparison function for memoization
+function areConnectionPropsEqual(prevProps: ConnectionLineProps, nextProps: ConnectionLineProps): boolean {
+  // Check primitive props
+  if (prevProps.isDeleteMode !== nextProps.isDeleteMode) return false;
+  
+  // Check connection data
+  const prevConn = prevProps.connection;
+  const nextConn = nextProps.connection;
+  if (prevConn.id !== nextConn.id) return false;
+  if (prevConn.animated !== nextConn.animated) return false;
+  if (prevConn.color !== nextConn.color) return false;
+  if (prevConn.bandwidth !== nextConn.bandwidth) return false;
+  if (prevConn.isActiveSource !== nextConn.isActiveSource) return false;
+  
+  // Check source node position and status (what affects rendering)
+  const prevSource = prevProps.sourceNode;
+  const nextSource = nextProps.sourceNode;
+  if (prevSource.positionX !== nextSource.positionX) return false;
+  if (prevSource.positionY !== nextSource.positionY) return false;
+  if (prevSource.status !== nextSource.status) return false;
+  if (prevSource.internetStatus !== nextSource.internetStatus) return false;
+  if (prevSource.type !== nextSource.type) return false;
+  
+  // Check target node position and status
+  const prevTarget = prevProps.targetNode;
+  const nextTarget = nextProps.targetNode;
+  if (prevTarget.positionX !== nextTarget.positionX) return false;
+  if (prevTarget.positionY !== nextTarget.positionY) return false;
+  if (prevTarget.status !== nextTarget.status) return false;
+  if (prevTarget.internetStatus !== nextTarget.internetStatus) return false;
+  
+  return true;
+}
+
+export const ConnectionLine = memo(function ConnectionLine({
   connection,
   sourceNode,
   targetNode,
@@ -241,9 +275,5 @@ export function ConnectionLine({
       )}
     </Group>
   );
-}
-
-
-
-
+}, areConnectionPropsEqual);
 

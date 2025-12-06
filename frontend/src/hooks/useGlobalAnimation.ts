@@ -7,13 +7,21 @@ export type AnimationMode = 'full' | 'reduced' | 'off';
 interface PerformanceSettings {
   animationMode: AnimationMode;
   enableGlowEffects: boolean;
+  autoReduceAnimations: boolean;
+  autoReduceThreshold: number; // Number of nodes that triggers auto-reduce
 }
 
 // Default settings
 const defaultSettings: PerformanceSettings = {
   animationMode: 'full',
   enableGlowEffects: true,
+  autoReduceAnimations: true,
+  autoReduceThreshold: 50, // Auto-reduce when > 50 nodes
 };
+
+// Track current node count for auto-reduce feature
+let currentNodeCount = 0;
+let isAutoReduced = false;
 
 // Storage key for localStorage
 const PERFORMANCE_SETTINGS_KEY = 'starlight-performance-settings';
@@ -27,6 +35,8 @@ function loadSettings(): PerformanceSettings {
       return {
         animationMode: parsed.animationMode || defaultSettings.animationMode,
         enableGlowEffects: parsed.enableGlowEffects ?? defaultSettings.enableGlowEffects,
+        autoReduceAnimations: parsed.autoReduceAnimations ?? defaultSettings.autoReduceAnimations,
+        autoReduceThreshold: parsed.autoReduceThreshold ?? defaultSettings.autoReduceThreshold,
       };
     }
   } catch (e) {
@@ -128,6 +138,86 @@ export function setGlowEffectsEnabled(enabled: boolean): void {
 }
 
 /**
+ * Set auto-reduce animations setting
+ * @param enabled - true to enable auto-reduce for large networks
+ */
+export function setAutoReduceAnimations(enabled: boolean): void {
+  performanceSettings = { ...performanceSettings, autoReduceAnimations: enabled };
+  saveSettings(performanceSettings);
+  notifySettingsListeners();
+  
+  // Re-evaluate auto-reduce state
+  checkAutoReduce();
+}
+
+/**
+ * Set the threshold for auto-reduce animations
+ * @param threshold - Number of nodes that triggers auto-reduce
+ */
+export function setAutoReduceThreshold(threshold: number): void {
+  performanceSettings = { ...performanceSettings, autoReduceThreshold: Math.max(10, threshold) };
+  saveSettings(performanceSettings);
+  notifySettingsListeners();
+  
+  // Re-evaluate auto-reduce state
+  checkAutoReduce();
+}
+
+/**
+ * Update the current node count and check if auto-reduce should be applied
+ * @param count - Current number of nodes in the canvas
+ */
+export function updateNodeCount(count: number): void {
+  currentNodeCount = count;
+  checkAutoReduce();
+}
+
+/**
+ * Check if auto-reduce should be applied based on current node count
+ */
+function checkAutoReduce(): void {
+  if (!performanceSettings.autoReduceAnimations) {
+    // Auto-reduce is disabled, restore to user's setting if we had auto-reduced
+    if (isAutoReduced) {
+      isAutoReduced = false;
+      // Restore animations - don't change saved settings, just internal state
+      if (performanceSettings.animationMode !== 'off') {
+        startGlobalAnimation();
+      }
+      document.body.classList.remove('auto-performance-mode');
+    }
+    return;
+  }
+  
+  const shouldReduce = currentNodeCount > performanceSettings.autoReduceThreshold;
+  
+  if (shouldReduce && !isAutoReduced) {
+    // Apply auto-reduce
+    isAutoReduced = true;
+    stopGlobalAnimation();
+    document.body.classList.add('auto-performance-mode');
+    notifySettingsListeners();
+    console.log(`⚡ Auto-performance mode: Animations reduced (${currentNodeCount} nodes)`);
+  } else if (!shouldReduce && isAutoReduced) {
+    // Remove auto-reduce
+    isAutoReduced = false;
+    if (performanceSettings.animationMode !== 'off' && subscribers.size > 0) {
+      startGlobalAnimation();
+    }
+    document.body.classList.remove('auto-performance-mode');
+    notifySettingsListeners();
+    console.log(`⚡ Auto-performance mode: Animations restored (${currentNodeCount} nodes)`);
+  }
+}
+
+/**
+ * Get whether auto-reduce is currently active
+ */
+export function isAutoReduceActive(): boolean {
+  return isAutoReduced;
+}
+
+/**
  * Get current animation mode
  */
 export function getAnimationMode(): AnimationMode {
@@ -146,6 +236,20 @@ export function getGlowEffectsEnabled(): boolean {
  */
 export function getPerformanceSettings(): PerformanceSettings {
   return { ...performanceSettings };
+}
+
+/**
+ * Get auto-reduce animations setting
+ */
+export function getAutoReduceAnimations(): boolean {
+  return performanceSettings.autoReduceAnimations;
+}
+
+/**
+ * Get auto-reduce threshold
+ */
+export function getAutoReduceThreshold(): number {
+  return performanceSettings.autoReduceThreshold;
 }
 
 /**
@@ -186,12 +290,17 @@ export function usePerformanceSettings(): PerformanceSettings {
  * - 'reduced': Updates at half the requested FPS (max 15)
  * - 'off': Returns static time (no updates)
  * 
+ * Also respects auto-reduce state when enabled and node count exceeds threshold
+ * 
  * @param fps - Target frames per second for updates (default: 30 for performance)
  * @returns Current animation time in milliseconds
  */
 export function useGlobalAnimation(fps: number = 30): number {
   const settings = usePerformanceSettings();
   const [time, setTime] = useState(globalTime);
+  
+  // Check if animations should be paused due to auto-reduce
+  const animationsEnabled = settings.animationMode !== 'off' && !isAutoReduced;
   
   // Adjust FPS based on animation mode
   const effectiveFps = settings.animationMode === 'reduced' 
@@ -200,8 +309,8 @@ export function useGlobalAnimation(fps: number = 30): number {
   const frameInterval = 1000 / effectiveFps;
   
   useEffect(() => {
-    // If animations are off, don't subscribe
-    if (settings.animationMode === 'off') {
+    // If animations are off or auto-reduced, don't subscribe
+    if (!animationsEnabled) {
       return;
     }
     
@@ -222,9 +331,18 @@ export function useGlobalAnimation(fps: number = 30): number {
       subscribers.delete(callback);
       stopGlobalAnimation();
     };
-  }, [frameInterval, settings.animationMode]);
+  }, [frameInterval, animationsEnabled]);
   
   return time;
+}
+
+/**
+ * Hook to track if auto-reduce is currently active
+ */
+export function useAutoReduceStatus(): boolean {
+  // Re-render when settings change (which includes auto-reduce state changes)
+  usePerformanceSettings();
+  return isAutoReduced;
 }
 
 /**

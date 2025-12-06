@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, memo } from 'react';
 import { Group, Line, Circle, Text, Rect } from 'react-konva';
 import Konva from 'konva';
 import type { GroupConnection, NodeGroup, NetworkNode } from '../../types/network';
@@ -22,7 +22,65 @@ interface GroupConnectionLineProps {
   isDeleteMode: boolean;
 }
 
-export function GroupConnectionLine({
+// Custom comparison function for memoization
+function areGroupConnectionPropsEqual(prevProps: GroupConnectionLineProps, nextProps: GroupConnectionLineProps): boolean {
+  // Check primitive props
+  if (prevProps.isDeleteMode !== nextProps.isDeleteMode) return false;
+  
+  // Check connection data
+  const prevConn = prevProps.connection;
+  const nextConn = nextProps.connection;
+  if (prevConn.id !== nextConn.id) return false;
+  if (prevConn.animated !== nextConn.animated) return false;
+  if (prevConn.bandwidth !== nextConn.bandwidth) return false;
+  if (prevConn.label !== nextConn.label) return false;
+  
+  // Check group positions and dimensions
+  const prevSource = prevProps.sourceGroup;
+  const nextSource = nextProps.sourceGroup;
+  if (prevSource.positionX !== nextSource.positionX) return false;
+  if (prevSource.positionY !== nextSource.positionY) return false;
+  if (prevSource.width !== nextSource.width) return false;
+  if (prevSource.height !== nextSource.height) return false;
+  
+  const prevTarget = prevProps.targetGroup;
+  const nextTarget = nextProps.targetGroup;
+  if (prevTarget.positionX !== nextTarget.positionX) return false;
+  if (prevTarget.positionY !== nextTarget.positionY) return false;
+  if (prevTarget.width !== nextTarget.width) return false;
+  if (prevTarget.height !== nextTarget.height) return false;
+  
+  // Check nodes array - compare statuses of nodes in source and target groups
+  // This is needed because connection status depends on node statuses
+  const prevSourceNodes = prevProps.nodes.filter(n => n.groupId === prevSource.id);
+  const nextSourceNodes = nextProps.nodes.filter(n => n.groupId === nextSource.id);
+  const prevTargetNodes = prevProps.nodes.filter(n => n.groupId === prevTarget.id);
+  const nextTargetNodes = nextProps.nodes.filter(n => n.groupId === nextTarget.id);
+  
+  // Quick length check
+  if (prevSourceNodes.length !== nextSourceNodes.length) return false;
+  if (prevTargetNodes.length !== nextTargetNodes.length) return false;
+  
+  // Check if any node status changed in source group
+  for (let i = 0; i < prevSourceNodes.length; i++) {
+    const prev = prevSourceNodes[i];
+    const next = nextSourceNodes.find(n => n.id === prev.id);
+    if (!next) return false;
+    if (prev.status !== next.status || prev.internetStatus !== next.internetStatus) return false;
+  }
+  
+  // Check if any node status changed in target group
+  for (let i = 0; i < prevTargetNodes.length; i++) {
+    const prev = prevTargetNodes[i];
+    const next = nextTargetNodes.find(n => n.id === prev.id);
+    if (!next) return false;
+    if (prev.status !== next.status || prev.internetStatus !== next.internetStatus) return false;
+  }
+  
+  return true;
+}
+
+export const GroupConnectionLine = memo(function GroupConnectionLine({
   connection,
   sourceGroup,
   targetGroup,
@@ -304,5 +362,5 @@ export function GroupConnectionLine({
       />
     </Group>
   );
-}
+}, areGroupConnectionPropsEqual);
 
