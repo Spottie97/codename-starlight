@@ -30,24 +30,15 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Function to generate a random string
+# Function to generate a random string for session secret
 generate_random_string() {
     if command_exists openssl; then
         openssl rand -hex 32
-    elif command_exists /dev/urandom; then
+    elif [ -r /dev/urandom ]; then
         head -c 32 /dev/urandom | xxd -p | tr -d '\n'
     else
         # Fallback: use date and process info
         echo "$(date +%s%N)$$" | sha256sum | cut -d' ' -f1
-    fi
-}
-
-# Function to generate a random password
-generate_password() {
-    if command_exists openssl; then
-        openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12
-    else
-        head -c 12 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 12
     fi
 }
 
@@ -97,11 +88,46 @@ if [ ! -f .env ]; then
         ENV_CREATED=true
         echo -e "  ${GREEN}✓${NC} Created .env from env.example"
         
-        # Generate secure values
-        ADMIN_PASSWORD=$(generate_password)
+        # Prompt user to create admin password
+        echo ""
+        echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║         First-Time Setup: Create Password         ║${NC}"
+        echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
+        echo ""
+        
+        while true; do
+            echo -ne "${YELLOW}Enter admin password: ${NC}"
+            read -s ADMIN_PASSWORD
+            echo ""
+            
+            if [ -z "$ADMIN_PASSWORD" ]; then
+                echo -e "${RED}Password cannot be empty. Please try again.${NC}"
+                continue
+            fi
+            
+            if [ ${#ADMIN_PASSWORD} -lt 6 ]; then
+                echo -e "${RED}Password must be at least 6 characters. Please try again.${NC}"
+                continue
+            fi
+            
+            echo -ne "${YELLOW}Confirm admin password: ${NC}"
+            read -s CONFIRM_PASSWORD
+            echo ""
+            
+            if [ "$ADMIN_PASSWORD" != "$CONFIRM_PASSWORD" ]; then
+                echo -e "${RED}Passwords do not match. Please try again.${NC}"
+                continue
+            fi
+            
+            break
+        done
+        
+        echo -e "  ${GREEN}✓${NC} Admin password set"
+        
+        # Generate secure session secret
         SESSION_SECRET=$(generate_random_string)
         
-        # Update .env with generated values
+        # Update .env with values
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS
             sed -i '' "s/AUTH_ADMIN_PASSWORD=changeme/AUTH_ADMIN_PASSWORD=$ADMIN_PASSWORD/" .env
@@ -111,15 +137,15 @@ if [ ! -f .env ]; then
             sed -i "s/AUTH_ADMIN_PASSWORD=changeme/AUTH_ADMIN_PASSWORD=$ADMIN_PASSWORD/" .env
             sed -i "s/AUTH_SESSION_SECRET=.*/AUTH_SESSION_SECRET=$SESSION_SECRET/" .env
         fi
-        echo -e "  ${GREEN}✓${NC} Generated secure credentials"
+        echo -e "  ${GREEN}✓${NC} Environment configured"
     else
         echo -e "${RED}Error: env.example not found.${NC}"
         exit 1
     fi
 else
     echo -e "  ${YELLOW}!${NC} Using existing .env file"
-    # Read existing password for display
-    ADMIN_PASSWORD=$(grep "^AUTH_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
+    # Don't display the password for existing setups
+    ADMIN_PASSWORD=""
 fi
 
 # Build and start containers
@@ -191,20 +217,15 @@ echo "║   Backend API: http://localhost:4000              ║"
 echo "║   MQTT Broker: mqtt://localhost:1883              ║"
 echo "║                                                   ║"
 echo "╠═══════════════════════════════════════════════════╣"
-echo -e "${NC}"
-
-if [ -n "$ADMIN_PASSWORD" ]; then
-    echo -e "${CYAN}║   Admin Password: ${YELLOW}$ADMIN_PASSWORD${CYAN}                   ║"
-    if [ "$ENV_CREATED" = true ]; then
-        echo -e "║   ${NC}(Save this! Stored in .env file)${CYAN}               ║"
-    fi
-    echo "║                                                   ║"
-fi
-
-echo -e "${GREEN}╠═══════════════════════════════════════════════════╣"
 echo "║                                                   ║"
 echo "║   To stop: ./stop.sh                              ║"
 echo "║   Logs:    docker compose logs -f                 ║"
 echo "║                                                   ║"
+if [ "$ENV_CREATED" = true ]; then
+echo "╠═══════════════════════════════════════════════════╣"
+echo "║                                                   ║"
+echo "║   Login with the admin password you just created  ║"
+echo "║                                                   ║"
+fi
 echo "╚═══════════════════════════════════════════════════╝"
 echo -e "${NC}"
