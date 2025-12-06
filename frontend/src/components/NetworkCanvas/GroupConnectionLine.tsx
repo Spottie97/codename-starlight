@@ -138,7 +138,9 @@ export function GroupConnectionLine({
     }, particleRef.current.getLayer());
 
     anim.start();
-    return () => anim.stop();
+    return () => {
+      anim.stop();
+    };
   }, [sourceX, sourceY, targetX, targetY, connection.animated, isActive, hasInternet, connectionStatus]);
 
   // Calculate midpoint for label
@@ -303,3 +305,4 @@ export function GroupConnectionLine({
     </Group>
   );
 }
+

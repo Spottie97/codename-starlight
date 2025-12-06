@@ -5,7 +5,6 @@ import {
   Wifi, 
   WifiOff, 
   Globe, 
-  AlertTriangle,
   Activity,
   Cloud,
   CloudOff,
@@ -99,10 +98,11 @@ export function StatusPanel() {
     try {
       const result = await networkApi.detectIsp();
       if (result.success && result.data) {
+        const data = result.data;
         setIspInfo({
-          ...result.data.ispInfo,
-          matchedNodeId: result.data.matchedNodeId,
-          matchedNodeName: nodes.find(n => n.id === result.data.matchedNodeId)?.name || null,
+          ...data.ispInfo,
+          matchedNodeId: data.matchedNodeId,
+          matchedNodeName: nodes.find(n => n.id === data.matchedNodeId)?.name || null,
         });
         
         // If switched, update the store
@@ -255,7 +255,6 @@ export function StatusPanel() {
               {internetNodes.map((node) => {
                 const nodeConnections = internetConnections.filter(c => c.sourceNodeId === node.id);
                 const isOnline = node.internetStatus === 'ONLINE' || node.status === 'ONLINE';
-                const activeConnection = nodeConnections.find(c => c.isActiveSource);
                 
                 return (
                   <div key={node.id} className="glass p-3 rounded-lg">

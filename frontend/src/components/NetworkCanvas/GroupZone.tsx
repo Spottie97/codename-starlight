@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Group, Rect, Text, Circle } from 'react-konva';
 import Konva from 'konva';
 import type { NodeGroup, EditorMode } from '../../types/network';
@@ -32,7 +32,7 @@ export function GroupZone({
   const groupRef = useRef<Konva.Group>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   // Handle drag end
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {

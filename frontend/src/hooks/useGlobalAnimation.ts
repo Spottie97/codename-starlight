@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 
 // Global animation state - shared across all components
 let globalAnimationFrame: number | null = null;
@@ -90,3 +90,4 @@ export function usePulseAnimation(period: number = 2000, fps: number = 30): { sc
   const time = useGlobalAnimation(fps);
   return calculatePulse(time, period);
 }
+

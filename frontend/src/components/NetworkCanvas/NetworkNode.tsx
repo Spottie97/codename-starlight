@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { Group, Circle, Text, Ring, Rect, RegularPolygon, Line } from 'react-konva';
 import Konva from 'konva';
-import type { NetworkNode as INetworkNode, EditorMode, NodeType, MonitoringMethod } from '../../types/network';
+import type { NetworkNode as INetworkNode, EditorMode, MonitoringMethod } from '../../types/network';
 import { STATUS_COLORS, NODE_TYPE_LABELS } from '../../types/network';
 import { useGlobalAnimation, calculatePulse } from '../../hooks/useGlobalAnimation';
 

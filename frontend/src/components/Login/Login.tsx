@@ -1,4 +1,4 @@
-import React, { useState, FormEvent } from 'react';
+import { useState, FormEvent } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Lock, AlertCircle, Loader2 } from 'lucide-react';
 

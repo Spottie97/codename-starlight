@@ -5,12 +5,11 @@ import type {
   Connection, 
   NodeGroup,
   GroupConnection,
-  Status, 
   EditorMode,
   CanvasState,
   NodeStatusUpdatePayload,
 } from '../types/network';
-import { networkApi, nodesApi, connectionsApi, groupsApi, groupConnectionsApi } from '../services/api';
+import { networkApi, nodesApi, groupsApi, groupConnectionsApi } from '../services/api';
 
 // Layout constants for auto-arrange
 const LAYOUT_CONFIG = {

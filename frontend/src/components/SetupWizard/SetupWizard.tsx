@@ -1,4 +1,4 @@
-import React, { useState, FormEvent } from 'react';
+import { useState, FormEvent } from 'react';
 import { Lock, AlertCircle, Loader2, CheckCircle, Shield, Eye, EyeOff } from 'lucide-react';
 
 interface SetupWizardProps {

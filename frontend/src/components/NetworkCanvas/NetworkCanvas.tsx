@@ -80,7 +80,6 @@ export function NetworkCanvas() {
     removeNode,
     removeConnection,
     addGroup,
-    updateGroup,
     updateGroupPosition,
     removeGroup,
     assignNodeToGroup,
@@ -287,12 +286,6 @@ export function NetworkCanvas() {
     []
   );
 
-  // Handle node drag
-  const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
-    updateNodePosition(nodeId, x, y);
-    debouncedSaveNodePosition(nodeId, x, y);
-  }, [updateNodePosition, debouncedSaveNodePosition]);
-
   // Handle connection click
   const handleConnectionClick = useCallback(async (connectionId: string) => {
     if (editorMode === 'delete') {
@@ -420,7 +413,7 @@ export function NetworkCanvas() {
 
   // Debounced group assignment check
   const debouncedGroupAssignment = useMemo(
-    () => debounce(async (nodeId: string, nodeName: string, newGroupId: string | null, currentGroupId: string | null) => {
+    () => debounce(async (nodeId: string, newGroupId: string | null, currentGroupId: string | null) => {
       if (newGroupId !== currentGroupId) {
         try {
           if (newGroupId) {
@@ -454,7 +447,7 @@ export function NetworkCanvas() {
     }
     
     // Debounced API calls
-    debouncedGroupAssignment(node.id, node.name, newGroupId, currentGroupId);
+    debouncedGroupAssignment(node.id, newGroupId, currentGroupId);
     debouncedSaveNodePosition(node.id, x, y);
   }, [updateNodePosition, findGroupAtPosition, assignNodeToGroup, nodes, debouncedGroupAssignment, debouncedSaveNodePosition]);
 

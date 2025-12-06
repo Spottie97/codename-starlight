@@ -1,4 +1,4 @@
-import React, { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { 
   X, 
   Settings as SettingsIcon, 
@@ -12,8 +12,7 @@ import {
   AlertCircle,
   CheckCircle,
   Loader2,
-  Send,
-  RefreshCw
+  Send
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 

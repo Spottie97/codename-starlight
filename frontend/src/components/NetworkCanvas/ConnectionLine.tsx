@@ -7,7 +7,6 @@ import { STATUS_COLORS } from '../../types/network';
 // Colors for internet connections
 const ACTIVE_SOURCE_COLOR = '#39ff14';  // Bright green for active
 const STANDBY_SOURCE_COLOR = '#ff6b35'; // Orange for standby
-const INTERNET_COLOR = '#00bfff';       // Sky blue for internet
 
 interface ConnectionLineProps {
   connection: Connection;
@@ -101,7 +100,9 @@ export function ConnectionLine({
     }, particleRef.current.getLayer());
 
     anim.start();
-    return () => anim.stop();
+    return () => {
+      anim.stop();
+    };
   }, [sourceNode, targetNode, connection.animated, isActiveSource, isInternetConnection]);
 
   const lineColor = getLineColor();
