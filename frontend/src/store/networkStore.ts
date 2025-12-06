@@ -680,19 +680,46 @@ export const useNetworkStore = create<NetworkState>()(
   }))
 );
 
-// Selectors
+// ============== SELECTORS ==============
+// Granular selectors to minimize re-renders
+
+// Basic data selectors
 export const selectNodes = (state: NetworkState) => state.nodes;
 export const selectConnections = (state: NetworkState) => state.connections;
 export const selectGroups = (state: NetworkState) => state.groups;
 export const selectGroupConnections = (state: NetworkState) => state.groupConnections;
+
+// Selection state selectors (separate from data to avoid re-renders)
+export const selectSelectedNodeId = (state: NetworkState) => state.selectedNodeId;
+export const selectSelectedGroupId = (state: NetworkState) => state.selectedGroupId;
+export const selectConnectingFromId = (state: NetworkState) => state.connectingFromId;
+export const selectConnectingFromGroupId = (state: NetworkState) => state.connectingFromGroupId;
+
+// Selected entity selectors
 export const selectSelectedNode = (state: NetworkState) => 
   state.selectedNodeId ? state.nodes.find(n => n.id === state.selectedNodeId) : null;
 export const selectSelectedGroup = (state: NetworkState) =>
   state.selectedGroupId ? state.groups.find(g => g.id === state.selectedGroupId) : null;
+
+// Editor state selectors
 export const selectEditorMode = (state: NetworkState) => state.editorMode;
 export const selectCanvasState = (state: NetworkState) => state.canvas;
 
-// Status summary selector
+// Canvas transform selectors (granular for viewport culling)
+export const selectCanvasScale = (state: NetworkState) => state.canvas.scale;
+export const selectCanvasOffset = (state: NetworkState) => ({ x: state.canvas.offsetX, y: state.canvas.offsetY });
+
+// Connection state selectors
+export const selectWsConnected = (state: NetworkState) => state.wsConnected;
+export const selectIsLoading = (state: NetworkState) => state.isLoading;
+export const selectError = (state: NetworkState) => state.error;
+
+// Derived/computed selectors with stable references
+export const selectNodeCount = (state: NetworkState) => state.nodes.length;
+export const selectGroupCount = (state: NetworkState) => state.groups.length;
+export const selectConnectionCount = (state: NetworkState) => state.connections.length;
+
+// Status summary selector - used by StatusPanel
 export const selectStatusSummary = (state: NetworkState) => {
   const probes = state.nodes.filter(n => n.type === 'PROBE');
   return {
@@ -705,6 +732,24 @@ export const selectStatusSummary = (state: NetworkState) => {
     internetOffline: probes.filter(p => p.internetStatus === 'OFFLINE').length,
   };
 };
+
+// Selector factory for getting a single node by ID (avoids re-renders from other nodes)
+export const createSelectNodeById = (nodeId: string) => 
+  (state: NetworkState) => state.nodes.find(n => n.id === nodeId);
+
+// Selector factory for getting a single group by ID
+export const createSelectGroupById = (groupId: string) =>
+  (state: NetworkState) => state.groups.find(g => g.id === groupId);
+
+// Selector for nodes in a specific group
+export const createSelectNodesInGroup = (groupId: string) =>
+  (state: NetworkState) => state.nodes.filter(n => n.groupId === groupId);
+
+// Selector for connections involving a specific node
+export const createSelectConnectionsForNode = (nodeId: string) =>
+  (state: NetworkState) => state.connections.filter(
+    c => c.sourceNodeId === nodeId || c.targetNodeId === nodeId
+  );
 
 
 

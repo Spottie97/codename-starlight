@@ -51,6 +51,8 @@ export function GridBackground({
     <Shape
       x={offsetX}
       y={offsetY}
+      listening={false}
+      perfectDrawEnabled={false}
       sceneFunc={(context) => {
         const { startX, startY, endX, endY } = bounds;
         

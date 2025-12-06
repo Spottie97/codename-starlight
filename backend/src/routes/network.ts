@@ -5,20 +5,76 @@ import { getCurrentIsp, detectAndSwitchIsp, forceRefreshIsp } from '../services/
 export const networkRouter = Router();
 
 // GET /api/network - Get full network topology
+// Optimized: Only select fields needed for rendering (excludes timestamps, secrets)
 networkRouter.get('/', async (req: Request, res: Response) => {
   try {
     const [nodes, connections, groups, groupConnections] = await Promise.all([
       prisma.node.findMany({
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          description: true,
+          groupId: true,
+          positionX: true,
+          positionY: true,
+          monitoringMethod: true,
+          ipAddress: true,
+          status: true,
+          internetStatus: true,
+          lastSeen: true,
+          internetLastCheck: true,
+          latency: true,
+          checkInternetAccess: true,
+          color: true,
+          icon: true,
+          // Exclude: mqttTopic, snmpCommunity, snmpVersion, httpEndpoint, httpExpectedCode,
+          //          pingInterval, ispName, ispOrganization, createdAt, updatedAt
+        },
       }),
       prisma.connection.findMany({
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          sourceNodeId: true,
+          targetNodeId: true,
+          label: true,
+          bandwidth: true,
+          isActiveSource: true,
+          color: true,
+          animated: true,
+          // Exclude: createdAt, updatedAt
+        },
       }),
       prisma.nodeGroup.findMany({
         orderBy: { zIndex: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          positionX: true,
+          positionY: true,
+          width: true,
+          height: true,
+          color: true,
+          opacity: true,
+          zIndex: true,
+          // Exclude: createdAt, updatedAt
+        },
       }),
       prisma.groupConnection.findMany({
         orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          sourceGroupId: true,
+          targetGroupId: true,
+          label: true,
+          bandwidth: true,
+          color: true,
+          animated: true,
+          // Exclude: createdAt, updatedAt
+        },
       }),
     ]);
 

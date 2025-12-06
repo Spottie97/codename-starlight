@@ -165,6 +165,8 @@ model Node {
   @@index([monitoringMethod])
   @@index([ipAddress])
   @@index([groupId])
+  @@index([status, monitoringMethod])  // Composite index for monitoring queries
+  @@index([type])  // Index for filtering by node type
 }
 
 // Connection between nodes

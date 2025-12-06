@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, memo } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import { Group, Rect, Text, Circle } from 'react-konva';
 import Konva from 'konva';
 import type { NodeGroup, EditorMode } from '../../types/network';
@@ -142,6 +142,8 @@ export const GroupZone = memo(function GroupZone({
         shadowColor={isConnecting ? '#fffc00' : group.color}
         shadowBlur={isConnecting ? 25 : isSelected ? 20 : 8}
         shadowOpacity={isConnecting ? 0.7 : 0.4}
+        shadowForStrokeEnabled={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Header bar */}
@@ -150,6 +152,8 @@ export const GroupZone = memo(function GroupZone({
         height={HEADER_HEIGHT}
         fill={headerColor}
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Header separator line */}
@@ -159,6 +163,8 @@ export const GroupZone = memo(function GroupZone({
         height={1}
         fill={group.color}
         opacity={0.5}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Group name */}
@@ -173,14 +179,16 @@ export const GroupZone = memo(function GroupZone({
         width={group.width - 20}
         ellipsis={true}
         wrap="none"
+        listening={false}
       />
 
       {/* Node count indicator */}
-      <Group x={group.width - 30} y={7}>
+      <Group x={group.width - 30} y={7} listening={false}>
         <Circle
           radius={8}
           fill={group.color}
           opacity={0.3}
+          perfectDrawEnabled={false}
         />
         <Text
           text="•"
@@ -189,6 +197,7 @@ export const GroupZone = memo(function GroupZone({
           fill={group.color}
           offsetX={3}
           offsetY={-2}
+          listening={false}
         />
       </Group>
 
@@ -202,6 +211,8 @@ export const GroupZone = memo(function GroupZone({
           strokeWidth={2}
           cornerRadius={CORNER_RADIUS}
           dash={[8, 4]}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
@@ -215,6 +226,8 @@ export const GroupZone = memo(function GroupZone({
           strokeWidth={3}
           cornerRadius={CORNER_RADIUS}
           dash={[10, 5]}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
@@ -281,6 +294,8 @@ export const GroupZone = memo(function GroupZone({
         fill={group.color}
         opacity={0.3}
         cornerRadius={[0, 0, CORNER_RADIUS, 0]}
+        listening={false}
+        perfectDrawEnabled={false}
       />
     </Group>
   );

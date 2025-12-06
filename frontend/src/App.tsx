@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useNetworkStore } from './store/networkStore';
 import { useWebSocket } from './hooks/useWebSocket';
 import { NetworkCanvas } from './components/NetworkCanvas/NetworkCanvas';
 import { StatusPanel } from './components/StatusPanel/StatusPanel';
 import { Toolbar } from './components/Toolbar/Toolbar';
-import { NodeEditor } from './components/NodeEditor/NodeEditor';
-import { GroupEditor } from './components/GroupEditor/GroupEditor';
 import { Login } from './components/Login';
 import { SetupWizard } from './components/SetupWizard';
-import { Settings } from './components/Settings';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LogOut, Loader2, Settings as SettingsIcon } from 'lucide-react';
 import { initPerformanceSettings } from './hooks/useGlobalAnimation';
 import type { WSMessage, NodeStatusUpdatePayload, BatchStatusUpdatePayload, NodeGroup, GroupConnection } from './types/network';
+
+// Lazy load heavy components that aren't always needed
+const NodeEditor = lazy(() => import('./components/NodeEditor/NodeEditor').then(m => ({ default: m.NodeEditor })));
+const GroupEditor = lazy(() => import('./components/GroupEditor/GroupEditor').then(m => ({ default: m.GroupEditor })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 
 // Initialize performance settings on app load (applies saved CSS classes)
 initPerformanceSettings();
@@ -181,14 +183,20 @@ function NetworkMonitor() {
       {/* Status Panel */}
       <StatusPanel />
 
-      {/* Node Editor (when a node is selected) */}
-      {selectedNodeId && <NodeEditor />}
+      {/* Node Editor (when a node is selected) - Lazy loaded */}
+      <Suspense fallback={null}>
+        {selectedNodeId && <NodeEditor />}
+      </Suspense>
 
-      {/* Group Editor (when a group is selected) */}
-      {selectedGroupId && <GroupEditor />}
+      {/* Group Editor (when a group is selected) - Lazy loaded */}
+      <Suspense fallback={null}>
+        {selectedGroupId && <GroupEditor />}
+      </Suspense>
 
-      {/* Settings Modal */}
-      <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      {/* Settings Modal - Lazy loaded */}
+      <Suspense fallback={null}>
+        {isSettingsOpen && <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />}
+      </Suspense>
 
       {/* Scanline effect */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden scanline opacity-20" />

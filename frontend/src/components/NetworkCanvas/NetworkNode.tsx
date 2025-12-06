@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
+import { useRef, useEffect, useState, useMemo, memo } from 'react';
 import { Group, Circle, Text, Ring, Rect, RegularPolygon, Line } from 'react-konva';
 import Konva from 'konva';
 import type { NetworkNode as INetworkNode, EditorMode, MonitoringMethod } from '../../types/network';
@@ -162,6 +162,8 @@ export const NetworkNode = memo(function NetworkNode({
           opacity={pulse.opacity}
           scaleX={pulse.scale}
           scaleY={pulse.scale}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Selection ring */}
@@ -173,6 +175,8 @@ export const NetworkNode = memo(function NetworkNode({
             stroke={isConnecting ? '#fffc00' : '#05d9e8'}
             strokeWidth={3}
             dash={[8, 4]}
+            listening={false}
+            perfectDrawEnabled={false}
           />
         )}
 
@@ -185,12 +189,14 @@ export const NetworkNode = memo(function NetworkNode({
           shadowColor={enableGlow ? INTERNET_COLOR : undefined}
           shadowBlur={enableGlow ? (isHovered ? 30 : 20) : 0}
           shadowOpacity={enableGlow ? 0.9 : 0}
+          shadowForStrokeEnabled={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Cloud inner decoration - three overlapping circles */}
-        <Circle x={-12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
-        <Circle x={12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
-        <Circle x={0} y={-8} radius={14} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
+        <Circle x={-12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} listening={false} perfectDrawEnabled={false} />
+        <Circle x={12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} listening={false} perfectDrawEnabled={false} />
+        <Circle x={0} y={-8} radius={14} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} listening={false} perfectDrawEnabled={false} />
 
         {/* Center status indicator - larger for internet nodes */}
         <Circle
@@ -199,6 +205,8 @@ export const NetworkNode = memo(function NetworkNode({
           shadowColor={enableGlow ? statusColor : undefined}
           shadowBlur={enableGlow ? 20 : 0}
           shadowOpacity={enableGlow ? 1 : 0}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* "WAN" label inside */}
@@ -212,6 +220,7 @@ export const NetworkNode = memo(function NetworkNode({
           width={30}
           offsetX={15}
           offsetY={5}
+          listening={false}
         />
 
         {/* Node name */}
@@ -225,6 +234,7 @@ export const NetworkNode = memo(function NetworkNode({
           align="center"
           width={120}
           offsetX={60}
+          listening={false}
         />
 
         {/* Status label */}
@@ -237,6 +247,7 @@ export const NetworkNode = memo(function NetworkNode({
           align="center"
           width={120}
           offsetX={60}
+          listening={false}
         />
 
         {/* Latency display */}
@@ -250,6 +261,7 @@ export const NetworkNode = memo(function NetworkNode({
             align="center"
             width={60}
             offsetX={30}
+            listening={false}
           />
         )}
       </Group>
@@ -286,6 +298,8 @@ export const NetworkNode = memo(function NetworkNode({
           opacity={pulse.opacity}
           scaleX={pulse.scale}
           scaleY={pulse.scale}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Selection ring */}
@@ -298,6 +312,8 @@ export const NetworkNode = memo(function NetworkNode({
             strokeWidth={3}
             dash={[8, 4]}
             rotation={30}
+            listening={false}
+            perfectDrawEnabled={false}
           />
         )}
 
@@ -312,6 +328,8 @@ export const NetworkNode = memo(function NetworkNode({
           shadowBlur={enableGlow ? (isHovered ? 30 : 20) : 0}
           shadowOpacity={enableGlow ? 0.9 : 0}
           rotation={30}
+          shadowForStrokeEnabled={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Inner hexagon decoration */}
@@ -323,13 +341,15 @@ export const NetworkNode = memo(function NetworkNode({
           strokeWidth={2}
           opacity={0.5}
           rotation={30}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Network lines inside - representing connections */}
-        <Line points={[-15, 0, 15, 0]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} />
-        <Line points={[0, -15, 0, 15]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} />
-        <Line points={[-10, -10, 10, 10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} />
-        <Line points={[-10, 10, 10, -10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} />
+        <Line points={[-15, 0, 15, 0]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} listening={false} perfectDrawEnabled={false} />
+        <Line points={[0, -15, 0, 15]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} listening={false} perfectDrawEnabled={false} />
+        <Line points={[-10, -10, 10, 10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} listening={false} perfectDrawEnabled={false} />
+        <Line points={[-10, 10, 10, -10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} listening={false} perfectDrawEnabled={false} />
 
         {/* Center status indicator */}
         <Circle
@@ -338,6 +358,8 @@ export const NetworkNode = memo(function NetworkNode({
           shadowColor={enableGlow ? statusColor : undefined}
           shadowBlur={enableGlow ? 18 : 0}
           shadowOpacity={enableGlow ? 1 : 0}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Internet status indicator - prominent for main link */}
@@ -350,6 +372,8 @@ export const NetworkNode = memo(function NetworkNode({
           strokeWidth={2}
           shadowColor={enableGlow ? (STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN) : undefined}
           shadowBlur={enableGlow ? 8 : 0}
+          listening={false}
+          perfectDrawEnabled={false}
         />
 
         {/* Node name */}
@@ -363,6 +387,7 @@ export const NetworkNode = memo(function NetworkNode({
           align="center"
           width={120}
           offsetX={60}
+          listening={false}
         />
 
         {/* Node type label */}
@@ -375,6 +400,7 @@ export const NetworkNode = memo(function NetworkNode({
           align="center"
           width={120}
           offsetX={60}
+          listening={false}
         />
 
         {/* Latency display */}
@@ -388,6 +414,7 @@ export const NetworkNode = memo(function NetworkNode({
             align="center"
             width={60}
             offsetX={30}
+            listening={false}
           />
         )}
       </Group>
@@ -435,6 +462,8 @@ export const NetworkNode = memo(function NetworkNode({
         opacity={pulse.opacity * 0.75}
         scaleX={pulse.scale}
         scaleY={pulse.scale}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Selection ring */}
@@ -447,6 +476,8 @@ export const NetworkNode = memo(function NetworkNode({
           strokeWidth={2}
           dash={[5, 5]}
           rotation={0}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
@@ -459,6 +490,8 @@ export const NetworkNode = memo(function NetworkNode({
         shadowColor={enableGlow ? node.color : undefined}
         shadowBlur={enableGlow ? (isHovered ? 20 : 10) : 0}
         shadowOpacity={enableGlow ? 0.8 : 0}
+        shadowForStrokeEnabled={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Inner glow */}
@@ -468,6 +501,8 @@ export const NetworkNode = memo(function NetworkNode({
         stroke={statusColor}
         strokeWidth={2}
         opacity={0.5}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Center status indicator */}
@@ -477,6 +512,8 @@ export const NetworkNode = memo(function NetworkNode({
         shadowColor={enableGlow ? statusColor : undefined}
         shadowBlur={enableGlow ? 15 : 0}
         shadowOpacity={enableGlow ? 1 : 0}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Internet status indicator (small dot) */}
@@ -487,11 +524,13 @@ export const NetworkNode = memo(function NetworkNode({
         fill={STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN}
         stroke="#12121a"
         strokeWidth={2}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Monitoring method badge */}
       {node.monitoringMethod && node.monitoringMethod !== 'NONE' && (
-        <Group x={-nodeRadius + 2} y={-nodeRadius + 2}>
+        <Group x={-nodeRadius + 2} y={-nodeRadius + 2} listening={false}>
           <Rect
             width={14}
             height={14}
@@ -500,6 +539,7 @@ export const NetworkNode = memo(function NetworkNode({
             shadowColor={enableGlow ? (MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280') : undefined}
             shadowBlur={enableGlow ? 5 : 0}
             shadowOpacity={enableGlow ? 0.5 : 0}
+            perfectDrawEnabled={false}
           />
           <Text
             text={MONITORING_METHOD_SHORT[node.monitoringMethod] || '?'}
@@ -512,6 +552,7 @@ export const NetworkNode = memo(function NetworkNode({
             align="center"
             verticalAlign="middle"
             offsetY={-2}
+            listening={false}
           />
         </Group>
       )}
@@ -527,6 +568,7 @@ export const NetworkNode = memo(function NetworkNode({
         align="center"
         width={100}
         offsetX={50}
+        listening={false}
       />
 
       {/* Node type label */}
@@ -539,6 +581,7 @@ export const NetworkNode = memo(function NetworkNode({
         align="center"
         width={100}
         offsetX={50}
+        listening={false}
       />
 
       {/* Latency display (if available) */}
@@ -552,6 +595,7 @@ export const NetworkNode = memo(function NetworkNode({
           align="center"
           width={60}
           offsetX={30}
+          listening={false}
         />
       )}
     </Group>

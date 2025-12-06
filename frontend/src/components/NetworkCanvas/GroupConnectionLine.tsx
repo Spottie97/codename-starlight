@@ -1,14 +1,14 @@
-import React, { useRef, useEffect, useMemo, memo } from 'react';
+import { useMemo, memo } from 'react';
 import { Group, Line, Circle, Text, Rect } from 'react-konva';
-import Konva from 'konva';
 import type { GroupConnection, NodeGroup, NetworkNode } from '../../types/network';
+import { useGlobalAnimation, usePerformanceSettings } from '../../hooks/useGlobalAnimation';
 
 // Status colors for group connections
 const STATUS_COLORS = {
-  INTERNET: '#39ff14',    // Green - internet connectivity
-  LOCAL: '#ff6b35',       // Orange - local only
-  OFFLINE: '#ff2a6d',     // Red - all offline
-  UNKNOWN: '#6B7280',     // Gray - unknown/no nodes
+  INTERNET: '#39ff14',
+  LOCAL: '#ff6b35',
+  OFFLINE: '#ff2a6d',
+  UNKNOWN: '#6B7280',
 };
 
 type GroupStatus = 'INTERNET' | 'LOCAL' | 'OFFLINE' | 'UNKNOWN';
@@ -24,10 +24,8 @@ interface GroupConnectionLineProps {
 
 // Custom comparison function for memoization
 function areGroupConnectionPropsEqual(prevProps: GroupConnectionLineProps, nextProps: GroupConnectionLineProps): boolean {
-  // Check primitive props
   if (prevProps.isDeleteMode !== nextProps.isDeleteMode) return false;
   
-  // Check connection data
   const prevConn = prevProps.connection;
   const nextConn = nextProps.connection;
   if (prevConn.id !== nextConn.id) return false;
@@ -35,7 +33,6 @@ function areGroupConnectionPropsEqual(prevProps: GroupConnectionLineProps, nextP
   if (prevConn.bandwidth !== nextConn.bandwidth) return false;
   if (prevConn.label !== nextConn.label) return false;
   
-  // Check group positions and dimensions
   const prevSource = prevProps.sourceGroup;
   const nextSource = nextProps.sourceGroup;
   if (prevSource.positionX !== nextSource.positionX) return false;
@@ -50,18 +47,15 @@ function areGroupConnectionPropsEqual(prevProps: GroupConnectionLineProps, nextP
   if (prevTarget.width !== nextTarget.width) return false;
   if (prevTarget.height !== nextTarget.height) return false;
   
-  // Check nodes array - compare statuses of nodes in source and target groups
-  // This is needed because connection status depends on node statuses
+  // Check node statuses in source and target groups
   const prevSourceNodes = prevProps.nodes.filter(n => n.groupId === prevSource.id);
   const nextSourceNodes = nextProps.nodes.filter(n => n.groupId === nextSource.id);
   const prevTargetNodes = prevProps.nodes.filter(n => n.groupId === prevTarget.id);
   const nextTargetNodes = nextProps.nodes.filter(n => n.groupId === nextTarget.id);
   
-  // Quick length check
   if (prevSourceNodes.length !== nextSourceNodes.length) return false;
   if (prevTargetNodes.length !== nextTargetNodes.length) return false;
   
-  // Check if any node status changed in source group
   for (let i = 0; i < prevSourceNodes.length; i++) {
     const prev = prevSourceNodes[i];
     const next = nextSourceNodes.find(n => n.id === prev.id);
@@ -69,7 +63,6 @@ function areGroupConnectionPropsEqual(prevProps: GroupConnectionLineProps, nextP
     if (prev.status !== next.status || prev.internetStatus !== next.internetStatus) return false;
   }
   
-  // Check if any node status changed in target group
   for (let i = 0; i < prevTargetNodes.length; i++) {
     const prev = prevTargetNodes[i];
     const next = nextTargetNodes.find(n => n.id === prev.id);
@@ -88,11 +81,10 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
   onClick,
   isDeleteMode,
 }: GroupConnectionLineProps) {
-  const lineRef = useRef<Konva.Line>(null);
-  const particleRef = useRef<Konva.Circle>(null);
-  const particle2Ref = useRef<Konva.Circle>(null);
+  // Use global animation system instead of individual Konva.Animation
+  const { animationMode } = usePerformanceSettings();
+  const animationTime = useGlobalAnimation(20);
 
-  // Get nodes in each group
   const sourceNodes = useMemo(() => 
     nodes.filter(n => n.groupId === sourceGroup.id), 
     [nodes, sourceGroup.id]
@@ -106,51 +98,32 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
   const getGroupStatus = (groupNodes: NetworkNode[]): GroupStatus => {
     if (groupNodes.length === 0) return 'UNKNOWN';
     
-    // Check if any node has internet connectivity:
-    // - INTERNET type node that is online
-    // - Any node with internetStatus === 'ONLINE'
     const hasInternet = groupNodes.some(n => 
       n.internetStatus === 'ONLINE' || 
       (n.type === 'INTERNET' && (n.status === 'ONLINE' || n.status === 'DEGRADED'))
     );
     if (hasInternet) return 'INTERNET';
     
-    // Check if any node is locally reachable (ONLINE or DEGRADED counts as reachable)
-    const hasLocal = groupNodes.some(n => 
-      n.status === 'ONLINE' || n.status === 'DEGRADED'
-    );
+    const hasLocal = groupNodes.some(n => n.status === 'ONLINE' || n.status === 'DEGRADED');
     if (hasLocal) return 'LOCAL';
     
-    // Check if ALL nodes are explicitly offline
     const allOffline = groupNodes.every(n => n.status === 'OFFLINE');
     if (allOffline) return 'OFFLINE';
     
-    // Otherwise status is unknown (nodes exist but status not determined yet)
     return 'UNKNOWN';
   };
 
   const sourceStatus = getGroupStatus(sourceNodes);
   const targetStatus = getGroupStatus(targetNodes);
 
-  // Combined connection status (based on the best status of both groups)
-  const getConnectionStatus = (): GroupStatus => {
-    // If both are offline, connection is offline
+  const connectionStatus = useMemo((): GroupStatus => {
     if (sourceStatus === 'OFFLINE' && targetStatus === 'OFFLINE') return 'OFFLINE';
-    
-    // If either has internet, connection has internet access
     if (sourceStatus === 'INTERNET' || targetStatus === 'INTERNET') return 'INTERNET';
-    
-    // If either has local connectivity, connection is local
     if (sourceStatus === 'LOCAL' || targetStatus === 'LOCAL') return 'LOCAL';
-    
-    // If one is offline and one is unknown, show offline
     if (sourceStatus === 'OFFLINE' || targetStatus === 'OFFLINE') return 'OFFLINE';
-    
-    // Both are unknown
     return 'UNKNOWN';
-  };
+  }, [sourceStatus, targetStatus]);
 
-  const connectionStatus = getConnectionStatus();
   const lineColor = STATUS_COLORS[connectionStatus];
   const isActive = connectionStatus === 'INTERNET' || connectionStatus === 'LOCAL';
   const hasInternet = connectionStatus === 'INTERNET';
@@ -160,79 +133,46 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
   const sourceY = sourceGroup.positionY + sourceGroup.height / 2;
   const targetX = targetGroup.positionX + targetGroup.width / 2;
   const targetY = targetGroup.positionY + targetGroup.height / 2;
-
-  // Calculate line points
   const points = [sourceX, sourceY, targetX, targetY];
 
-  // Animate particles along the line
-  useEffect(() => {
-    if (!particleRef.current) return;
-    if (!connection.animated && !isActive) return;
-    if (connectionStatus === 'OFFLINE' || connectionStatus === 'UNKNOWN') return;
+  // Calculate particle positions using global animation time
+  const shouldAnimateParticles = (connection.animated || isActive) && 
+    connectionStatus !== 'OFFLINE' && connectionStatus !== 'UNKNOWN' && animationMode !== 'off';
+  const period = hasInternet ? 2000 : 3000;
 
-    // Faster animation for internet connections
-    const period = hasInternet ? 2000 : 3000;
-
-    const anim = new Konva.Animation((frame) => {
-      if (!frame || !particleRef.current) return;
-
-      const t = (frame.time % period) / period;
-
-      // Linear interpolation along the line
-      const x = sourceX + (targetX - sourceX) * t;
-      const y = sourceY + (targetY - sourceY) * t;
-
-      particleRef.current.x(x);
-      particleRef.current.y(y);
-
-      // Second particle for internet connections (offset by 50%)
-      if (particle2Ref.current && hasInternet) {
-        const t2 = ((frame.time + period / 2) % period) / period;
-        const x2 = sourceX + (targetX - sourceX) * t2;
-        const y2 = sourceY + (targetY - sourceY) * t2;
-        particle2Ref.current.x(x2);
-        particle2Ref.current.y(y2);
-      }
-    }, particleRef.current.getLayer());
-
-    anim.start();
-    return () => {
-      anim.stop();
+  const particlePosition = useMemo(() => {
+    if (!shouldAnimateParticles) return null;
+    const t = (animationTime % period) / period;
+    return {
+      x: sourceX + (targetX - sourceX) * t,
+      y: sourceY + (targetY - sourceY) * t,
     };
-  }, [sourceX, sourceY, targetX, targetY, connection.animated, isActive, hasInternet, connectionStatus]);
+  }, [shouldAnimateParticles, animationTime, period, sourceX, sourceY, targetX, targetY]);
 
-  // Calculate midpoint for label
+  const particle2Position = useMemo(() => {
+    if (!shouldAnimateParticles || !hasInternet) return null;
+    const t2 = ((animationTime + period / 2) % period) / period;
+    return {
+      x: sourceX + (targetX - sourceX) * t2,
+      y: sourceY + (targetY - sourceY) * t2,
+    };
+  }, [shouldAnimateParticles, hasInternet, animationTime, period, sourceX, sourceY, targetX, targetY]);
+
   const midX = (sourceX + targetX) / 2;
   const midY = (sourceY + targetY) / 2;
 
-  // Status label text
-  const getStatusLabel = () => {
-    switch (connectionStatus) {
-      case 'INTERNET': return '● WAN';
-      case 'LOCAL': return '○ LAN';
-      case 'OFFLINE': return '✕ DOWN';
-      default: return '? N/A';
-    }
-  };
+  const statusLabel = connectionStatus === 'INTERNET' ? '● WAN' 
+    : connectionStatus === 'LOCAL' ? '○ LAN' 
+    : connectionStatus === 'OFFLINE' ? '✕ DOWN' : '? N/A';
 
   return (
     <Group
-      onClick={(e) => {
-        e.cancelBubble = true;
-        onClick();
-      }}
-      onTap={(e) => {
-        e.cancelBubble = true;
-        onClick();
-      }}
-      onMouseEnter={() => {
-        document.body.style.cursor = isDeleteMode ? 'not-allowed' : 'pointer';
-      }}
-      onMouseLeave={() => {
-        document.body.style.cursor = 'default';
-      }}
+      onClick={(e) => { e.cancelBubble = true; onClick(); }}
+      onTap={(e) => { e.cancelBubble = true; onClick(); }}
+      onMouseEnter={() => { document.body.style.cursor = isDeleteMode ? 'not-allowed' : 'pointer'; }}
+      onMouseLeave={() => { document.body.style.cursor = 'default'; }}
     >
-      {/* Glow effect for internet connections */}
+      {/* Glow effect */}
       {hasInternet && (
         <Line
           points={points}
@@ -241,12 +181,13 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
           opacity={0.15}
           lineCap="round"
           lineJoin="round"
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
-      {/* Main connection line - thicker than node connections */}
+      {/* Main connection line */}
       <Line
-        ref={lineRef}
         points={points}
         stroke={lineColor}
         strokeWidth={isDeleteMode ? 6 : hasInternet ? 5 : 4}
@@ -257,35 +198,43 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
         shadowColor={lineColor}
         shadowBlur={hasInternet ? 25 : isActive ? 15 : 5}
         shadowOpacity={hasInternet ? 0.7 : 0.5}
+        shadowForStrokeEnabled={false}
         hitStrokeWidth={25}
+        perfectDrawEnabled={false}
       />
 
-      {/* Animated particle (data flow indicator) */}
-      {isActive && (
+      {/* Animated particle - uses global animation */}
+      {particlePosition && (
         <Circle
-          ref={particleRef}
+          x={particlePosition.x}
+          y={particlePosition.y}
           radius={hasInternet ? 7 : 5}
           fill="#ffffff"
           shadowColor={lineColor}
           shadowBlur={hasInternet ? 25 : 15}
           shadowOpacity={1}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
-      {/* Second particle for internet connections */}
-      {hasInternet && (
+      {/* Second particle */}
+      {particle2Position && (
         <Circle
-          ref={particle2Ref}
+          x={particle2Position.x}
+          y={particle2Position.y}
           radius={7}
           fill="#ffffff"
           shadowColor={lineColor}
           shadowBlur={25}
           shadowOpacity={1}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
       {/* Status indicator label */}
-      <Group x={midX} y={midY - 20}>
+      <Group x={midX} y={midY - 20} listening={false}>
         <Rect
           x={-30}
           y={-10}
@@ -296,22 +245,23 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
           opacity={0.95}
           stroke={lineColor}
           strokeWidth={1}
+          perfectDrawEnabled={false}
         />
         <Text
-          text={getStatusLabel()}
+          text={statusLabel}
           fontSize={10}
           fontFamily="Orbitron"
           fill={lineColor}
           width={60}
           align="center"
           offsetX={30}
+          listening={false}
         />
       </Group>
 
-      {/* Connection label (bandwidth or custom label) */}
+      {/* Connection label */}
       {(connection.bandwidth || connection.label) && (
-        <Group x={midX} y={midY + 8}>
-          {/* Background */}
+        <Group x={midX} y={midY + 8} listening={false}>
           <Rect
             x={-40}
             y={-10}
@@ -320,8 +270,8 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
             fill="#12121a"
             cornerRadius={4}
             opacity={0.9}
+            perfectDrawEnabled={false}
           />
-          {/* Label text */}
           <Text
             text={connection.label || connection.bandwidth || ''}
             fontSize={10}
@@ -331,6 +281,7 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
             align="center"
             offsetX={40}
             offsetY={-4}
+            listening={false}
           />
         </Group>
       )}
@@ -346,6 +297,8 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
         shadowColor={STATUS_COLORS[sourceStatus]}
         shadowBlur={hasInternet ? 15 : 10}
         shadowOpacity={0.7}
+        listening={false}
+        perfectDrawEnabled={false}
       />
 
       {/* Target indicator dot */}
@@ -359,8 +312,9 @@ export const GroupConnectionLine = memo(function GroupConnectionLine({
         shadowColor={STATUS_COLORS[targetStatus]}
         shadowBlur={hasInternet ? 15 : 10}
         shadowOpacity={0.7}
+        listening={false}
+        perfectDrawEnabled={false}
       />
     </Group>
   );
 }, areGroupConnectionPropsEqual);
-

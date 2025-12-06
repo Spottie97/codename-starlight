@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Group, Line, Circle, Text, Rect } from 'react-konva';
-import Konva from 'konva';
 import type { Connection, NetworkNode } from '../../types/network';
 import { STATUS_COLORS } from '../../types/network';
+import { useGlobalAnimation, usePerformanceSettings } from '../../hooks/useGlobalAnimation';
 
 // Colors for internet connections
 const ACTIVE_SOURCE_COLOR = '#39ff14';  // Bright green for active
@@ -18,10 +18,8 @@ interface ConnectionLineProps {
 
 // Custom comparison function for memoization
 function areConnectionPropsEqual(prevProps: ConnectionLineProps, nextProps: ConnectionLineProps): boolean {
-  // Check primitive props
   if (prevProps.isDeleteMode !== nextProps.isDeleteMode) return false;
   
-  // Check connection data
   const prevConn = prevProps.connection;
   const nextConn = nextProps.connection;
   if (prevConn.id !== nextConn.id) return false;
@@ -30,7 +28,6 @@ function areConnectionPropsEqual(prevProps: ConnectionLineProps, nextProps: Conn
   if (prevConn.bandwidth !== nextConn.bandwidth) return false;
   if (prevConn.isActiveSource !== nextConn.isActiveSource) return false;
   
-  // Check source node position and status (what affects rendering)
   const prevSource = prevProps.sourceNode;
   const nextSource = nextProps.sourceNode;
   if (prevSource.positionX !== nextSource.positionX) return false;
@@ -39,7 +36,6 @@ function areConnectionPropsEqual(prevProps: ConnectionLineProps, nextProps: Conn
   if (prevSource.internetStatus !== nextSource.internetStatus) return false;
   if (prevSource.type !== nextSource.type) return false;
   
-  // Check target node position and status
   const prevTarget = prevProps.targetNode;
   const nextTarget = nextProps.targetNode;
   if (prevTarget.positionX !== nextTarget.positionX) return false;
@@ -57,16 +53,14 @@ export const ConnectionLine = memo(function ConnectionLine({
   onClick,
   isDeleteMode,
 }: ConnectionLineProps) {
-  const lineRef = useRef<Konva.Line>(null);
-  const particleRef = useRef<Konva.Circle>(null);
-  const particle2Ref = useRef<Konva.Circle>(null);
-
-  // Check if this is an internet source connection
+  // Use global animation system instead of individual Konva.Animation
+  const { animationMode } = usePerformanceSettings();
+  const animationTime = useGlobalAnimation(20); // Lower FPS for particles
+  
   const isInternetConnection = sourceNode.type === 'INTERNET';
   const isActiveSource = isInternetConnection && connection.isActiveSource;
   const isStandbySource = isInternetConnection && !connection.isActiveSource;
 
-  // Calculate line points
   const points = [
     sourceNode.positionX,
     sourceNode.positionY,
@@ -74,20 +68,16 @@ export const ConnectionLine = memo(function ConnectionLine({
     targetNode.positionY,
   ];
 
-  // Determine line color based on node statuses and active source state
-  const getLineColor = () => {
-    // For internet connections, use special colors
+  // Memoize line color calculation
+  const lineColor = useMemo(() => {
     if (isInternetConnection) {
       if (sourceNode.internetStatus === 'OFFLINE' || sourceNode.status === 'OFFLINE') {
         return STATUS_COLORS.OFFLINE;
       }
-      if (isActiveSource) {
-        return ACTIVE_SOURCE_COLOR;
-      }
+      if (isActiveSource) return ACTIVE_SOURCE_COLOR;
       return STANDBY_SOURCE_COLOR;
     }
     
-    // Regular connection coloring
     if (sourceNode.status === 'OFFLINE' || targetNode.status === 'OFFLINE') {
       return STATUS_COLORS.OFFLINE;
     }
@@ -95,82 +85,44 @@ export const ConnectionLine = memo(function ConnectionLine({
       return STATUS_COLORS.DEGRADED;
     }
     return connection.color;
-  };
+  }, [isInternetConnection, isActiveSource, sourceNode.status, sourceNode.internetStatus, targetNode.status, connection.color]);
 
-  // Animate particles along the line
-  useEffect(() => {
-    if (!particleRef.current || !connection.animated) return;
-    
-    // For internet connections, check internet status
-    if (isInternetConnection) {
-      if (sourceNode.internetStatus === 'OFFLINE' || sourceNode.status === 'OFFLINE') return;
-    } else {
-      if (sourceNode.status === 'OFFLINE' || targetNode.status === 'OFFLINE') return;
-    }
-
-    // Faster animation for active internet source
-    const period = isActiveSource ? 1200 : 2000;
-
-    const anim = new Konva.Animation((frame) => {
-      if (!frame || !particleRef.current) return;
-
-      const t = (frame.time % period) / period;
-
-      // Linear interpolation along the line
-      const x = sourceNode.positionX + (targetNode.positionX - sourceNode.positionX) * t;
-      const y = sourceNode.positionY + (targetNode.positionY - sourceNode.positionY) * t;
-
-      particleRef.current.x(x);
-      particleRef.current.y(y);
-
-      // Second particle for active source (offset by 50%)
-      if (particle2Ref.current && isActiveSource) {
-        const t2 = ((frame.time + period / 2) % period) / period;
-        const x2 = sourceNode.positionX + (targetNode.positionX - sourceNode.positionX) * t2;
-        const y2 = sourceNode.positionY + (targetNode.positionY - sourceNode.positionY) * t2;
-        particle2Ref.current.x(x2);
-        particle2Ref.current.y(y2);
-      }
-    }, particleRef.current.getLayer());
-
-    anim.start();
-    return () => {
-      anim.stop();
-    };
-  }, [sourceNode, targetNode, connection.animated, isActiveSource, isInternetConnection]);
-
-  const lineColor = getLineColor();
-  
-  // Determine if connection is "active" (data flowing)
-  const isConnectionActive = isInternetConnection 
+  const isActive = isInternetConnection 
     ? (sourceNode.internetStatus === 'ONLINE' || sourceNode.status === 'ONLINE')
     : (sourceNode.status === 'ONLINE' && targetNode.status === 'ONLINE');
   
-  // For rendering purposes
-  const isActive = isConnectionActive;
+  // Calculate particle positions using global animation time (no individual Konva.Animation)
+  const shouldAnimateParticles = connection.animated && isActive && animationMode !== 'off';
+  const period = isActiveSource ? 1200 : 2000;
   
-  // Calculate midpoint for labels
+  const particlePosition = useMemo(() => {
+    if (!shouldAnimateParticles) return null;
+    const t = (animationTime % period) / period;
+    return {
+      x: sourceNode.positionX + (targetNode.positionX - sourceNode.positionX) * t,
+      y: sourceNode.positionY + (targetNode.positionY - sourceNode.positionY) * t,
+    };
+  }, [shouldAnimateParticles, animationTime, period, sourceNode.positionX, sourceNode.positionY, targetNode.positionX, targetNode.positionY]);
+
+  const particle2Position = useMemo(() => {
+    if (!shouldAnimateParticles || !isActiveSource) return null;
+    const t2 = ((animationTime + period / 2) % period) / period;
+    return {
+      x: sourceNode.positionX + (targetNode.positionX - sourceNode.positionX) * t2,
+      y: sourceNode.positionY + (targetNode.positionY - sourceNode.positionY) * t2,
+    };
+  }, [shouldAnimateParticles, isActiveSource, animationTime, period, sourceNode.positionX, sourceNode.positionY, targetNode.positionX, targetNode.positionY]);
+
   const midX = (sourceNode.positionX + targetNode.positionX) / 2;
   const midY = (sourceNode.positionY + targetNode.positionY) / 2;
-
-  // Determine stroke width based on connection type
-  const getStrokeWidth = () => {
-    if (isDeleteMode) return 4;
-    if (isActiveSource) return 4;  // Thicker for active internet source
-    if (isStandbySource) return 2;
-    return 2;
-  };
+  const strokeWidth = isDeleteMode ? 4 : isActiveSource ? 4 : 2;
 
   return (
     <Group
       onClick={onClick}
       onTap={onClick}
-      onMouseEnter={() => {
-        document.body.style.cursor = isDeleteMode ? 'not-allowed' : 'pointer';
-      }}
-      onMouseLeave={() => {
-        document.body.style.cursor = 'default';
-      }}
+      onMouseEnter={() => { document.body.style.cursor = isDeleteMode ? 'not-allowed' : 'pointer'; }}
+      onMouseLeave={() => { document.body.style.cursor = 'default'; }}
     >
       {/* Glow effect for active internet source */}
       {isActiveSource && isActive && (
@@ -181,15 +133,16 @@ export const ConnectionLine = memo(function ConnectionLine({
           opacity={0.2}
           lineCap="round"
           lineJoin="round"
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
       {/* Main connection line */}
       <Line
-        ref={lineRef}
         points={points}
         stroke={lineColor}
-        strokeWidth={getStrokeWidth()}
+        strokeWidth={strokeWidth}
         opacity={isActiveSource ? 1 : isStandbySource ? 0.5 : isActive ? 0.8 : 0.4}
         lineCap="round"
         lineJoin="round"
@@ -197,36 +150,44 @@ export const ConnectionLine = memo(function ConnectionLine({
         shadowColor={lineColor}
         shadowBlur={isActiveSource ? 20 : isActive ? 10 : 0}
         shadowOpacity={isActiveSource ? 0.8 : 0.5}
+        shadowForStrokeEnabled={false}
         hitStrokeWidth={20}
+        perfectDrawEnabled={false}
       />
 
-      {/* Animated particle (data flow indicator) */}
-      {connection.animated && isActive && (
+      {/* Animated particle - uses global animation system */}
+      {particlePosition && (
         <Circle
-          ref={particleRef}
+          x={particlePosition.x}
+          y={particlePosition.y}
           radius={isActiveSource ? 6 : 4}
           fill="#ffffff"
           shadowColor={lineColor}
           shadowBlur={isActiveSource ? 20 : 15}
           shadowOpacity={1}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
       {/* Second particle for active internet source */}
-      {connection.animated && isActiveSource && isActive && (
+      {particle2Position && (
         <Circle
-          ref={particle2Ref}
+          x={particle2Position.x}
+          y={particle2Position.y}
           radius={6}
           fill="#ffffff"
           shadowColor={lineColor}
           shadowBlur={20}
           shadowOpacity={1}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
 
-      {/* Active/Standby indicator label for internet connections */}
+      {/* Active/Standby indicator label */}
       {isInternetConnection && (
-        <Group x={midX} y={midY - 18}>
+        <Group x={midX} y={midY - 18} listening={false}>
           <Rect
             x={-35}
             y={-10}
@@ -237,6 +198,7 @@ export const ConnectionLine = memo(function ConnectionLine({
             opacity={0.95}
             stroke={lineColor}
             strokeWidth={1}
+            perfectDrawEnabled={false}
           />
           <Text
             text={isActiveSource ? '● ACTIVE' : '○ STANDBY'}
@@ -246,13 +208,14 @@ export const ConnectionLine = memo(function ConnectionLine({
             width={70}
             align="center"
             offsetX={35}
+            listening={false}
           />
         </Group>
       )}
 
-      {/* Midpoint label (bandwidth if set) */}
+      {/* Bandwidth label */}
       {connection.bandwidth && (
-        <Group x={midX} y={midY + (isInternetConnection ? 8 : -12)}>
+        <Group x={midX} y={midY + (isInternetConnection ? 8 : -12)} listening={false}>
           <Rect
             x={-30}
             y={-8}
@@ -261,6 +224,7 @@ export const ConnectionLine = memo(function ConnectionLine({
             fill="#12121a"
             cornerRadius={4}
             opacity={0.9}
+            perfectDrawEnabled={false}
           />
           <Text
             text={connection.bandwidth}
@@ -270,10 +234,10 @@ export const ConnectionLine = memo(function ConnectionLine({
             width={60}
             align="center"
             offsetX={30}
+            listening={false}
           />
         </Group>
       )}
     </Group>
   );
 }, areConnectionPropsEqual);
-

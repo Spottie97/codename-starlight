@@ -23,6 +23,10 @@ const defaultSettings: PerformanceSettings = {
 let currentNodeCount = 0;
 let isAutoReduced = false;
 
+// Track tab visibility for pausing animations when tab is hidden
+let isTabVisible = true;
+let visibilityListenerAdded = false;
+
 // Storage key for localStorage
 const PERFORMANCE_SETTINGS_KEY = 'starlight-performance-settings';
 
@@ -68,16 +72,45 @@ let globalAnimationFrame: number | null = null;
 let globalTime = 0;
 let subscribers = new Set<(time: number) => void>();
 
+// Handle visibility change to pause/resume animations
+function handleVisibilityChange() {
+  isTabVisible = document.visibilityState === 'visible';
+  
+  if (isTabVisible) {
+    // Tab became visible - resume animations if they should be running
+    if (performanceSettings.animationMode !== 'off' && !isAutoReduced && subscribers.size > 0) {
+      startGlobalAnimation();
+    }
+  } else {
+    // Tab became hidden - pause animations to save resources
+    if (globalAnimationFrame !== null) {
+      cancelAnimationFrame(globalAnimationFrame);
+      globalAnimationFrame = null;
+    }
+  }
+}
+
+// Add visibility listener once
+function ensureVisibilityListener() {
+  if (visibilityListenerAdded) return;
+  visibilityListenerAdded = true;
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  isTabVisible = document.visibilityState === 'visible';
+}
+
 // Start the global animation loop if not already running
 function startGlobalAnimation() {
   if (globalAnimationFrame !== null) return;
   if (performanceSettings.animationMode === 'off') return;
+  if (!isTabVisible) return; // Don't start if tab is hidden
+  
+  ensureVisibilityListener();
   
   let lastTime = performance.now();
   
   const animate = (currentTime: number) => {
-    // Stop if animation mode was changed to 'off'
-    if (performanceSettings.animationMode === 'off') {
+    // Stop if animation mode was changed to 'off' or tab became hidden
+    if (performanceSettings.animationMode === 'off' || !isTabVisible) {
       globalAnimationFrame = null;
       return;
     }
