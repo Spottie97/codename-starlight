@@ -191,6 +191,7 @@ export async function initializeSystem(password: string): Promise<{ success: boo
 
 /**
  * Get public settings (safe for frontend)
+ * Includes fallback defaults for fields that may not exist in older database schemas
  */
 export async function getPublicSettings(): Promise<PublicSettings> {
   const settings = await getOrCreateSettings();
@@ -199,14 +200,14 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     isSetupComplete: settings.isSetupComplete,
     n8nWebhookUrl: settings.n8nWebhookUrl,
     n8nWebhookConfigured: !!settings.n8nWebhookUrl,
-    probeTimeoutMs: settings.probeTimeoutMs,
-    statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
-    internetCheckTargets: settings.internetCheckTargets,
-    // Performance settings
-    monitoringIntervalMs: settings.monitoringIntervalMs,
-    monitoringConcurrency: settings.monitoringConcurrency,
-    enableStatusHistory: settings.enableStatusHistory,
-    statusHistoryCleanupEnabled: settings.statusHistoryCleanupEnabled,
+    probeTimeoutMs: settings.probeTimeoutMs ?? 5000,
+    statusHistoryRetentionDays: settings.statusHistoryRetentionDays ?? 30,
+    internetCheckTargets: settings.internetCheckTargets ?? '8.8.8.8,1.1.1.1,208.67.222.222',
+    // Performance settings (with fallback defaults for older schemas)
+    monitoringIntervalMs: (settings as any).monitoringIntervalMs ?? 60000,
+    monitoringConcurrency: (settings as any).monitoringConcurrency ?? 10,
+    enableStatusHistory: (settings as any).enableStatusHistory ?? true,
+    statusHistoryCleanupEnabled: (settings as any).statusHistoryCleanupEnabled ?? true,
   };
 }
 
@@ -336,16 +337,19 @@ export async function getMonitoringConfig(): Promise<{
 }> {
   const settings = await getOrCreateSettings();
   
+  const targets = settings.internetCheckTargets ?? '8.8.8.8,1.1.1.1,208.67.222.222';
+  
   return {
-    probeTimeoutMs: settings.probeTimeoutMs,
-    statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
-    internetCheckTargets: settings.internetCheckTargets.split(',').map(ip => ip.trim()).filter(Boolean),
+    probeTimeoutMs: settings.probeTimeoutMs ?? 5000,
+    statusHistoryRetentionDays: settings.statusHistoryRetentionDays ?? 30,
+    internetCheckTargets: targets.split(',').map(ip => ip.trim()).filter(Boolean),
   };
 }
 
 /**
  * Get performance configuration
  * Used by monitoring service for interval and concurrency settings
+ * Includes fallback defaults for fields that may not exist in older database schemas
  */
 export async function getPerformanceConfig(): Promise<{
   monitoringIntervalMs: number;
@@ -357,11 +361,11 @@ export async function getPerformanceConfig(): Promise<{
   const settings = await getOrCreateSettings();
   
   return {
-    monitoringIntervalMs: settings.monitoringIntervalMs,
-    monitoringConcurrency: settings.monitoringConcurrency,
-    enableStatusHistory: settings.enableStatusHistory,
-    statusHistoryCleanupEnabled: settings.statusHistoryCleanupEnabled,
-    statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
+    monitoringIntervalMs: (settings as any).monitoringIntervalMs ?? 60000,
+    monitoringConcurrency: (settings as any).monitoringConcurrency ?? 10,
+    enableStatusHistory: (settings as any).enableStatusHistory ?? true,
+    statusHistoryCleanupEnabled: (settings as any).statusHistoryCleanupEnabled ?? true,
+    statusHistoryRetentionDays: settings.statusHistoryRetentionDays ?? 30,
   };
 }
 

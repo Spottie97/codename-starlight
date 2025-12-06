@@ -131,14 +131,14 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
       
       setSettings(data.data);
       setWebhookUrl(data.data.n8nWebhookUrl || '');
-      setProbeTimeout(String(data.data.probeTimeoutMs));
-      setRetentionDays(String(data.data.statusHistoryRetentionDays));
-      setInternetTargets(data.data.internetCheckTargets);
-      // Performance settings
-      setMonitoringInterval(String(data.data.monitoringIntervalMs));
-      setMonitoringConcurrency(String(data.data.monitoringConcurrency));
-      setEnableStatusHistory(data.data.enableStatusHistory);
-      setStatusHistoryCleanupEnabled(data.data.statusHistoryCleanupEnabled);
+      setProbeTimeout(String(data.data.probeTimeoutMs || 5000));
+      setRetentionDays(String(data.data.statusHistoryRetentionDays || 30));
+      setInternetTargets(data.data.internetCheckTargets || '8.8.8.8,1.1.1.1,208.67.222.222');
+      // Performance settings (with defaults for when fields don't exist in DB yet)
+      setMonitoringInterval(String(data.data.monitoringIntervalMs ?? 60000));
+      setMonitoringConcurrency(String(data.data.monitoringConcurrency ?? 10));
+      setEnableStatusHistory(data.data.enableStatusHistory ?? true);
+      setStatusHistoryCleanupEnabled(data.data.statusHistoryCleanupEnabled ?? true);
     } catch (err) {
       setError('Failed to connect to server');
     } finally {
@@ -381,6 +381,11 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
       setSuccess('Performance settings saved successfully');
       setSettings(data.data);
+      
+      // Close modal after brief delay to show success message
+      setTimeout(() => {
+        onClose();
+      }, 1000);
     } catch (err) {
       setError('Failed to connect to server');
     } finally {
@@ -470,7 +475,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-dark-500">
+          <div className="flex overflow-x-auto border-b border-dark-500 scrollbar-thin">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -479,13 +484,13 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                   setError('');
                   setSuccess('');
                 }}
-                className={`flex items-center gap-2 px-6 py-3 font-display text-sm uppercase tracking-wider transition-all
+                className={`flex items-center gap-1.5 px-3 md:px-5 py-3 font-display text-xs md:text-sm uppercase tracking-wider transition-all whitespace-nowrap flex-shrink-0
                   ${activeTab === tab.id 
                     ? 'text-neon-blue border-b-2 border-neon-blue bg-neon-blue/5' 
                     : 'text-gray-400 hover:text-white hover:bg-dark-700'
                   }`}
               >
-                <tab.icon className="w-4 h-4" />
+                <tab.icon className="w-4 h-4 flex-shrink-0" />
                 {tab.label}
               </button>
             ))}
@@ -768,7 +773,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                       </label>
                       <input
                         type="number"
-                        value={probeTimeout}
+                        value={probeTimeout || '5000'}
                         onChange={(e) => setProbeTimeout(e.target.value)}
                         min="1000"
                         step="1000"
@@ -788,7 +793,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                       </label>
                       <input
                         type="number"
-                        value={retentionDays}
+                        value={retentionDays || '30'}
                         onChange={(e) => setRetentionDays(e.target.value)}
                         min="1"
                         max="365"
@@ -929,7 +934,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                           Monitoring Interval
                         </label>
                         <select
-                          value={monitoringInterval}
+                          value={monitoringInterval || '60000'}
                           onChange={(e) => setMonitoringInterval(e.target.value)}
                           className="w-full px-4 py-3 bg-dark-800 border border-dark-500 rounded
                                    text-white font-body
@@ -953,7 +958,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                         </label>
                         <input
                           type="number"
-                          value={monitoringConcurrency}
+                          value={monitoringConcurrency || '10'}
                           onChange={(e) => setMonitoringConcurrency(e.target.value)}
                           min="1"
                           max="50"
