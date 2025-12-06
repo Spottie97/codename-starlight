@@ -9,7 +9,7 @@ import type {
   CanvasState,
   NodeStatusUpdatePayload,
 } from '../types/network';
-import { networkApi, nodesApi, groupsApi, groupConnectionsApi } from '../services/api';
+import { networkApi, nodesApi, groupsApi } from '../services/api';
 
 // Layout constants for auto-arrange
 const LAYOUT_CONFIG = {
