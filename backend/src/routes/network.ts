@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '../db';
 import { getCurrentIsp, detectAndSwitchIsp, forceRefreshIsp } from '../services/ispService';
 
 export const networkRouter = Router();

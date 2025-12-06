@@ -6,6 +6,7 @@ interface AuthContextType {
   token: string | null;
   login: (password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  getToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -97,12 +98,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(TOKEN_KEY);
   }, []);
 
+  // Get token function for API calls
+  const getToken = useCallback(() => {
+    return localStorage.getItem(TOKEN_KEY);
+  }, []);
+
   const value: AuthContextType = {
     isAuthenticated: !!token,
     isLoading,
     token,
     login,
-    logout
+    logout,
+    getToken
   };
 
   return (

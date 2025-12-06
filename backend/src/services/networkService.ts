@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '../db';
 import { Status } from '../types';
 
 /**

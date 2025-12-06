@@ -2,8 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 
+import { prisma } from './db';
 import { nodesRouter } from './routes/nodes';
 import { connectionsRouter } from './routes/connections';
 import { probesRouter } from './routes/probes';
@@ -11,6 +11,9 @@ import { networkRouter } from './routes/network';
 import { groupsRouter } from './routes/groups';
 import { groupConnectionsRouter } from './routes/groupConnections';
 import { authRouter } from './routes/auth';
+import { webhooksRouter } from './routes/webhooks';
+import { setupRouter } from './routes/setup';
+import { settingsRouter } from './routes/settings';
 import { authMiddleware } from './middleware/auth';
 import { initWebSocketServer } from './services/websocketService';
 import { initMqttService } from './services/mqttService';
@@ -18,9 +21,6 @@ import { startMonitoringScheduler, stopMonitoringScheduler } from './services/mo
 
 // Load environment variables
 dotenv.config();
-
-// Initialize Prisma client
-export const prisma = new PrismaClient();
 
 // Create Express app
 const app = express();
@@ -42,8 +42,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Auth routes (no auth required)
+// Public routes (no auth required)
 app.use('/api/auth', authRouter);
+app.use('/api/setup', setupRouter);
 
 // Apply auth middleware to all protected routes
 app.use('/api', authMiddleware);
@@ -55,6 +56,8 @@ app.use('/api/probes', probesRouter);
 app.use('/api/network', networkRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/group-connections', groupConnectionsRouter);
+app.use('/api/webhooks', webhooksRouter);
+app.use('/api/settings', settingsRouter);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { 
   MousePointer2, 
   Plus, 
@@ -8,12 +9,14 @@ import {
   ZoomOut, 
   Maximize2,
   Save,
-  FolderOpen,
   Square,
-  LayoutGrid
+  LayoutGrid,
+  Loader2,
+  Check
 } from 'lucide-react';
 import { useNetworkStore, selectEditorMode, selectCanvasState } from '../../store/networkStore';
 import { cn } from '../../lib/utils';
+import { networkApi } from '../../services/api';
 import type { EditorMode } from '../../types/network';
 
 interface ToolButtonProps {
@@ -22,19 +25,22 @@ interface ToolButtonProps {
   active?: boolean;
   onClick: () => void;
   variant?: 'default' | 'danger';
+  disabled?: boolean;
 }
 
-function ToolButton({ icon, label, active, onClick, variant = 'default' }: ToolButtonProps) {
+function ToolButton({ icon, label, active, onClick, variant = 'default', disabled }: ToolButtonProps) {
   return (
     <button
       onClick={onClick}
       title={label}
+      disabled={disabled}
       className={cn(
         'p-2.5 rounded transition-all duration-200',
         'hover:bg-dark-600',
         active && variant === 'default' && 'bg-neon-blue/20 text-neon-blue shadow-glow',
         active && variant === 'danger' && 'bg-neon-pink/20 text-neon-pink',
         !active && 'text-gray-400 hover:text-white',
+        disabled && 'opacity-50 cursor-not-allowed',
       )}
     >
       {icon}
@@ -46,6 +52,9 @@ export function Toolbar() {
   const editorMode = useNetworkStore(selectEditorMode);
   const canvas = useNetworkStore(selectCanvasState);
   const { setEditorMode, setCanvasScale, resetCanvas, autoArrangeLayout } = useNetworkStore();
+  
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const tools: { mode: EditorMode; icon: React.ReactNode; label: string; variant?: 'default' | 'danger' }[] = [
     { mode: 'select', icon: <MousePointer2 size={20} />, label: 'Select (V)' },
@@ -59,6 +68,36 @@ export function Toolbar() {
   const handleZoomIn = () => setCanvasScale(canvas.scale * 1.2);
   const handleZoomOut = () => setCanvasScale(canvas.scale / 1.2);
   const handleResetView = () => resetCanvas();
+
+  const handleSaveLayout = async () => {
+    if (isSaving) return;
+    
+    setIsSaving(true);
+    setSaveSuccess(false);
+    
+    try {
+      const timestamp = new Date().toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const name = `Layout - ${timestamp}`;
+      
+      const result = await networkApi.saveLayout(name, undefined, true);
+      
+      if (result.success) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2000);
+      } else {
+        console.error('Failed to save layout:', result.error);
+      }
+    } catch (error) {
+      console.error('Error saving layout:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="absolute top-20 left-4 z-40 flex flex-col gap-2 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin">
@@ -107,23 +146,24 @@ export function Toolbar() {
         />
       </div>
 
-      {/* Save/Load */}
+      {/* Save */}
       <div className="glass-dark rounded-lg p-1 flex flex-col gap-1">
         <ToolButton
-          icon={<Save size={20} />}
-          label="Save Layout"
-          onClick={() => {/* TODO: Implement save */}}
-        />
-        <ToolButton
-          icon={<FolderOpen size={20} />}
-          label="Load Layout"
-          onClick={() => {/* TODO: Implement load */}}
+          icon={
+            isSaving ? (
+              <Loader2 size={20} className="animate-spin" />
+            ) : saveSuccess ? (
+              <Check size={20} className="text-green-500" />
+            ) : (
+              <Save size={20} />
+            )
+          }
+          label={isSaving ? "Saving..." : saveSuccess ? "Saved!" : "Save Layout"}
+          onClick={handleSaveLayout}
+          disabled={isSaving}
+          active={saveSuccess}
         />
       </div>
     </div>
   );
 }
-
-
-
-

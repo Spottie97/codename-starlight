@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '../db';
 import { CreateGroupConnectionSchema, UpdateGroupConnectionSchema } from '../types';
 import { broadcastMessage } from '../services/websocketService';
 
@@ -190,3 +190,4 @@ groupConnectionsRouter.delete('/:id', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to delete group connection' });
   }
 });
+

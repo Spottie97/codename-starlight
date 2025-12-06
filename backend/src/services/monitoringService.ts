@@ -3,12 +3,20 @@
  * Runs periodic health checks on all nodes based on their monitoring method
  */
 
-import { prisma } from '../server';
+import { prisma } from '../db';
 import { broadcastMessage } from './websocketService';
 import { pingWithRetry, pingHost } from './pingService';
 import { snmpQueryWithRetry } from './snmpService';
 import { httpCheckWithRetry, buildHealthCheckUrl } from './httpService';
 import { detectAndSwitchIsp } from './ispService';
+import { 
+  triggerNodeDown, 
+  triggerNodeUp, 
+  triggerInternetDown, 
+  triggerInternetUp,
+  triggerGroupDegraded,
+  isWebhookEnabled 
+} from './webhookService';
 
 // Types
 type MonitoringMethod = 'MQTT' | 'PING' | 'SNMP' | 'HTTP' | 'NONE';
@@ -34,6 +42,9 @@ interface InternetCheckResult {
 // Monitoring interval handle
 let monitoringInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+
+// Track group health for degradation detection
+const groupHealthCache = new Map<string, { total: number; offline: number }>();
 
 // Default check interval in milliseconds (minimum 10 seconds)
 const MIN_CHECK_INTERVAL = 10000;
@@ -190,6 +201,23 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
       statusHistoryCreates.push({ nodeId: node.id, name: node.name });
       const emoji = newStatus === 'ONLINE' ? '🌐' : '🔴';
       console.log(`${emoji} ${node.name}: Internet ${node.internetStatus} → ${newStatus}`);
+
+      // Trigger webhook for internet status change
+      if (isWebhookEnabled()) {
+        const webhookData = {
+          node_id: node.id,
+          node_name: node.name,
+          previous_status: node.internetStatus,
+          new_status: newStatus,
+          latency: internetCheck.latency || undefined,
+        };
+
+        if (newStatus === 'OFFLINE') {
+          triggerInternetDown(webhookData);
+        } else if (newStatus === 'ONLINE' && node.internetStatus === 'OFFLINE') {
+          triggerInternetUp(webhookData);
+        }
+      }
     }
 
     results.push({
@@ -345,6 +373,59 @@ async function checkNodesInternetAccess(): Promise<InternetCheckResult[]> {
 }
 
 /**
+ * Check for group degradation and trigger webhooks
+ * Triggers when 50% or more nodes in a group are offline
+ */
+async function checkGroupDegradation(): Promise<void> {
+  try {
+    // Get all groups with their node counts
+    const groups = await prisma.nodeGroup.findMany({
+      include: {
+        nodes: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    for (const group of groups) {
+      if (group.nodes.length === 0) continue;
+
+      const offlineNodes = group.nodes.filter(n => n.status === 'OFFLINE');
+      const offlineCount = offlineNodes.length;
+      const totalCount = group.nodes.length;
+      const offlinePercentage = offlineCount / totalCount;
+
+      // Get previous state
+      const previousState = groupHealthCache.get(group.id);
+      const wasHealthy = !previousState || (previousState.offline / previousState.total) < 0.5;
+      const isNowDegraded = offlinePercentage >= 0.5;
+
+      // Update cache
+      groupHealthCache.set(group.id, { total: totalCount, offline: offlineCount });
+
+      // Only trigger if transitioning to degraded state
+      if (isNowDegraded && wasHealthy && offlineCount > 0) {
+        console.log(`⚠️  Group "${group.name}" is degraded: ${offlineCount}/${totalCount} nodes offline`);
+        
+        triggerGroupDegraded({
+          group_id: group.id,
+          group_name: group.name,
+          total_nodes: totalCount,
+          offline_nodes: offlineCount,
+          affected_node_names: offlineNodes.map(n => n.name),
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error checking group degradation:', error);
+  }
+}
+
+/**
  * Run a monitoring check cycle for all active nodes
  */
 async function runMonitoringCycle(): Promise<void> {
@@ -428,6 +509,25 @@ async function runMonitoringCycle(): Promise<void> {
           
           const emoji = result.status === 'ONLINE' ? '✅' : '❌';
           console.log(`${emoji} ${node.name}: ${node.status} → ${result.status}`);
+
+          // Trigger webhook for node status change
+          if (isWebhookEnabled()) {
+            const webhookData = {
+              node_id: node.id,
+              node_name: node.name,
+              node_type: node.monitoringMethod,
+              ip_address: node.ipAddress || undefined,
+              previous_status: node.status,
+              new_status: result.status,
+              latency: result.latency || undefined,
+            };
+
+            if (result.status === 'OFFLINE') {
+              triggerNodeDown(webhookData);
+            } else if (result.status === 'ONLINE' && node.status === 'OFFLINE') {
+              triggerNodeUp(webhookData);
+            }
+          }
         }
 
         // Collect WebSocket payload
@@ -487,6 +587,11 @@ async function runMonitoringCycle(): Promise<void> {
 
     // Detect ISP and auto-switch active source if needed
     await detectAndSwitchIsp();
+
+    // Check for group degradation (webhook trigger)
+    if (isWebhookEnabled()) {
+      await checkGroupDegradation();
+    }
 
     const duration = Date.now() - startTime;
     console.log(`✔️  Monitoring cycle complete: ${updatedCount}/${nodes.length} updated in ${duration}ms`);

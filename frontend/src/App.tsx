@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNetworkStore } from './store/networkStore';
 import { useWebSocket } from './hooks/useWebSocket';
 import { NetworkCanvas } from './components/NetworkCanvas/NetworkCanvas';
@@ -7,9 +7,19 @@ import { Toolbar } from './components/Toolbar/Toolbar';
 import { NodeEditor } from './components/NodeEditor/NodeEditor';
 import { GroupEditor } from './components/GroupEditor/GroupEditor';
 import { Login } from './components/Login';
+import { SetupWizard } from './components/SetupWizard';
+import { Settings } from './components/Settings';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { LogOut, Loader2 } from 'lucide-react';
+import { LogOut, Loader2, Settings as SettingsIcon } from 'lucide-react';
 import type { WSMessage, NodeStatusUpdatePayload, BatchStatusUpdatePayload, NodeGroup, GroupConnection } from './types/network';
+
+// API base URL
+const API_BASE = (() => {
+  if (typeof window === 'undefined') return '';
+  return window.location.port === '8080' 
+    ? 'http://localhost:4000'
+    : '';
+})();
 
 function NetworkMonitor() {
   const { 
@@ -32,6 +42,8 @@ function NetworkMonitor() {
     selectedNodeId,
     selectedGroupId,
   } = useNetworkStore();
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Handle WebSocket messages
   const handleWSMessage = (message: WSMessage) => {
@@ -134,6 +146,17 @@ function NetworkMonitor() {
             </span>
           </div>
           
+          {/* Settings button */}
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-neon-blue 
+                     border border-dark-500 hover:border-neon-blue/50 rounded transition-all duration-200"
+            title="Settings"
+          >
+            <SettingsIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+          
           {/* Logout button */}
           <button
             onClick={logout}
@@ -164,29 +187,75 @@ function NetworkMonitor() {
       {/* Group Editor (when a group is selected) */}
       {selectedGroupId && <GroupEditor />}
 
+      {/* Settings Modal */}
+      <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
       {/* Scanline effect */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden scanline opacity-20" />
     </div>
   );
 }
 
-// Loading screen while checking auth
-function LoadingScreen() {
+// Loading screen while checking auth or setup
+function LoadingScreen({ message = 'Loading...' }: { message?: string }) {
   return (
     <div className="h-screen w-screen flex items-center justify-center bg-dark-900 grid-bg">
       <div className="flex flex-col items-center gap-4">
         <Loader2 className="w-12 h-12 text-neon-blue animate-spin" />
-        <p className="text-gray-400 font-body">Loading...</p>
+        <p className="text-gray-400 font-body">{message}</p>
       </div>
     </div>
   );
 }
 
-// Main app wrapper that handles auth state
-function AppContent() {
-  const { isAuthenticated, isLoading } = useAuth();
+// Setup status check states
+type SetupState = 'checking' | 'required' | 'complete';
 
-  if (isLoading) {
+// Main app wrapper that handles setup check and auth state
+function AppContent() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [setupState, setSetupState] = useState<SetupState>('checking');
+
+  // Check if setup is complete
+  useEffect(() => {
+    checkSetupStatus();
+  }, []);
+
+  const checkSetupStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/setup/status`);
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        setSetupState(data.data.isSetupComplete ? 'complete' : 'required');
+      } else {
+        // Assume setup is needed if we can't determine
+        setSetupState('required');
+      }
+    } catch (error) {
+      console.error('Failed to check setup status:', error);
+      // If server is unreachable, wait and retry
+      setTimeout(checkSetupStatus, 2000);
+    }
+  };
+
+  // Handle setup completion
+  const handleSetupComplete = () => {
+    setSetupState('complete');
+  };
+
+  // Show loading while checking setup status
+  if (setupState === 'checking') {
+    return <LoadingScreen message="Checking system status..." />;
+  }
+
+  // Show setup wizard if setup is required
+  if (setupState === 'required') {
+    return <SetupWizard onSetupComplete={handleSetupComplete} />;
+  }
+
+  // Setup is complete, proceed with normal auth flow
+  if (authLoading) {
     return <LoadingScreen />;
   }
 
@@ -207,7 +276,3 @@ function App() {
 }
 
 export default App;
-
-
-
-

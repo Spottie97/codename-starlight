@@ -4,8 +4,9 @@
  * and automatically switches active internet source based on detected ISP
  */
 
-import { prisma } from '../server';
+import { prisma } from '../db';
 import { broadcastMessage } from './websocketService';
+import { triggerIspChanged, isWebhookEnabled } from './webhookService';
 
 // ISP Info from external API
 export interface IspInfo {
@@ -244,6 +245,16 @@ export async function detectAndSwitchIsp(): Promise<{
     },
     timestamp: now.toISOString(),
   });
+
+  // Trigger webhook for n8n integration
+  if (switched && isWebhookEnabled()) {
+    triggerIspChanged({
+      new_isp: ispInfo.isp,
+      public_ip: ispInfo.publicIp,
+      matched_node_id: matchedNode.id,
+      matched_node_name: matchedNode.name,
+    });
+  }
 
   return { ispInfo, matchedNodeId: matchedNode.id, switched };
 }

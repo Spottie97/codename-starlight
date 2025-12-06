@@ -237,4 +237,30 @@ model NetworkLayout {
   @@index([isDefault])
 }
 
+// System settings - singleton table for application configuration
+// Stored in database instead of env vars for UI-based management
+model SystemSettings {
+  id                  String   @id @default("system")
+  
+  // Setup status
+  isSetupComplete     Boolean  @default(false)
+  
+  // Authentication
+  adminPasswordHash   String?  // bcrypt hash of admin password
+  sessionSecret       String?  // Secret for JWT/session token generation
+  
+  // n8n Webhook Integration
+  n8nWebhookUrl       String?  // Webhook endpoint for notifications
+  n8nWebhookSecret    String?  // HMAC secret for webhook signing
+  
+  // Monitoring Settings
+  probeTimeoutMs              Int     @default(5000)   // Timeout to mark probe offline
+  statusHistoryRetentionDays  Int     @default(30)     // How long to keep status history
+  internetCheckTargets        String  @default("8.8.8.8,1.1.1.1,208.67.222.222")  // IPs for internet checks
+  
+  // Timestamps
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
 

@@ -19,6 +19,9 @@ services:
       - starlight-network
 
   # Backend Node.js API
+  # Note: Application configuration (admin password, webhooks, etc.) 
+  # is managed through the web UI and stored in the database.
+  # Only infrastructure settings are defined here.
   backend:
     build:
       context: ./backend
@@ -82,5 +85,3 @@ volumes:
   postgres_data:
   mqtt_data:
   mqtt_log:
-
-

@@ -14,6 +14,7 @@ A local network monitoring tool with a game-like visualization interface. Monito
 - **ISP Detection**: Automatic ISP detection with failover source switching
 - **Game-like UI**: Cyberpunk-inspired interface with animations and visual effects
 - **Offline-First**: Works entirely on your local network, no cloud dependencies
+- **Web-Based Setup**: Configure everything through the browser - no command line required
 - **Modular Design**: Add as many nodes as you need to cover your network
 
 ## Architecture
@@ -43,84 +44,63 @@ A local network monitoring tool with a game-like visualization interface. Monito
 ### Prerequisites
 
 - Docker and Docker Compose
-- Node.js 20+ (for local development only)
 
 ### One-Command Setup
 
 ```bash
-# Clone and start everything with a single command
+# Clone the repository
 git clone https://github.com/your-org/codename-starlight.git
 cd codename-starlight
-./start.sh
+
+# Start all services
+docker compose up -d
 ```
 
-That's it! The script will:
-- Check Docker prerequisites
-- Create `.env` with secure auto-generated credentials
-- Build and start all services
-- Wait for everything to be ready
-- Display the access URL and admin password
+That's it! The application will start and guide you through the initial setup.
 
-**Access the application:**
+**First-time Setup:**
+1. Open http://localhost:8080 in your browser
+2. You'll see the setup wizard - create your admin password
+3. Log in with your new password
+4. Start building your network topology!
+
+**Access Points:**
 - **Frontend:** http://localhost:8080
 - **Backend API:** http://localhost:4000
 - **MQTT Broker:** mqtt://localhost:1883
 
 **To stop:**
 ```bash
-./stop.sh
+docker compose down
 ```
 
 **To completely clean up (including data):**
 ```bash
-./stop.sh --clean
+docker compose down -v
 ```
 
-### Manual Setup (Alternative)
+### Configuration
 
-If you prefer manual setup:
+All application settings can be managed through the **Settings** page in the web UI:
 
-1. **Copy environment file**
-   ```bash
-   cp env.example .env
-   # Edit .env to set AUTH_ADMIN_PASSWORD and AUTH_SESSION_SECRET
-   ```
+| Setting | Description |
+|---------|-------------|
+| **Admin Password** | Change your login password |
+| **n8n Webhook URL** | Webhook endpoint for notifications |
+| **n8n Webhook Secret** | HMAC secret for webhook signing |
+| **Probe Timeout** | Time before marking a probe offline |
+| **History Retention** | How long to keep status history |
+| **Internet Check Targets** | IPs used for internet connectivity checks |
 
-2. **Start all services**
-   ```bash
-   docker-compose up -d
-   ```
+Access settings by clicking the gear icon in the top-right corner of the dashboard.
 
-3. **Access the application** at http://localhost:8080
+### Advanced Setup (Optional)
 
-### Local Development
+For advanced users who want to customize infrastructure settings:
 
-1. **Install backend dependencies**
-   ```bash
-   cd backend
-   npm install
-   ```
-
-2. **Setup database**
-   ```bash
-   # Start PostgreSQL and MQTT with Docker
-   docker-compose up -d postgres mqtt-broker
-   
-   # Run migrations
-   npm run db:push
-   ```
-
-3. **Start backend**
-   ```bash
-   npm run dev
-   ```
-
-4. **Install frontend dependencies** (in a new terminal)
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+1. **Custom database credentials** - Edit `docker-compose.yml` to change PostgreSQL settings
+2. **External MQTT broker** - Update `MQTT_BROKER_URL` in `docker-compose.yml`
+3. **Production deployment** - See the Production section below
 
 ## Usage Guide
 
@@ -175,72 +155,46 @@ If you prefer manual setup:
 - **Pan**: Drag on empty canvas space (in Select mode)
 - **Reset View**: Click the maximize button to reset zoom and position
 
-## Node Configuration
+## Webhook Integration (n8n)
 
-### Monitoring Configuration
+Starlight can push network events to n8n (or any webhook endpoint) for notifications like WhatsApp alerts.
 
-Each node can be configured with different monitoring settings based on its type:
+### Setup
 
-**For PING monitoring:**
-- `ipAddress`: IP address to ping
-- `pingInterval`: Seconds between checks (default: 30)
+1. Open **Settings** in the Starlight dashboard
+2. Go to the **Webhooks** tab
+3. Enter your n8n webhook URL
+4. Optionally add a secret for HMAC signing
+5. Click **Test** to verify connectivity
 
-**For SNMP monitoring:**
-- `ipAddress`: Device IP address
-- `snmpCommunity`: SNMP community string (default: "public")
-- `snmpVersion`: SNMP version - "1", "2c", or "3"
+### Supported Events
 
-**For HTTP monitoring:**
-- `ipAddress`: Server IP address
-- `httpEndpoint`: Full URL or path (defaults to `http://{ip}/health`)
-- `httpExpectedCode`: Expected HTTP status code (default: 200)
+| Event | Description |
+|-------|-------------|
+| NODE_DOWN | A monitored node goes offline |
+| NODE_UP | A monitored node comes back online |
+| INTERNET_DOWN | Internet connectivity is lost |
+| INTERNET_UP | Internet connectivity is restored |
+| ISP_CHANGED | Active ISP connection switched |
+| GROUP_DEGRADED | 50%+ nodes in a group go offline |
 
-**For MQTT monitoring:**
-- `mqttTopic`: MQTT topic to subscribe to (e.g., `network/probes/probe-001/status`)
+### Webhook Payload Example
 
-### Internet Nodes (ISP Configuration)
-
-For INTERNET type nodes, you can configure ISP detection:
-
-- `ispName`: ISP name to match (e.g., "Comcast", "AT&T", "Verizon")
-- `ispOrganization`: Alternative organization name to match
-
-The system automatically detects the current ISP and can switch the active source when failover occurs.
-
-## Node Groups
-
-Groups allow you to visually organize nodes into zones representing:
-- Physical locations (floors, rooms, buildings)
-- Departments or teams
-- Network segments (DMZ, internal, guest)
-
-### Creating Groups
-
-1. Switch to **Group** mode (G)
-2. Click and drag on the canvas to create a zone
-3. Configure the group name, color, and opacity
-4. Drag nodes into the group or assign via node editor
-
-### Connecting Groups
-
-Create connections between groups to show inter-area links:
-1. Switch to **Connect Groups** mode (Shift+C)
-2. Click on source group, then target group
-3. Optionally add labels and bandwidth information
-
-## ISP Detection & Failover
-
-Starlight can automatically detect your current ISP and visualize which internet connection is active:
-
-1. **Configure INTERNET nodes** with `ispName` or `ispOrganization`
-2. The backend queries ip-api.com to detect the current ISP
-3. When detected, the matching INTERNET node's connection is marked as "active source"
-4. Visual indicators show which ISP is currently providing connectivity
-
-This is useful for:
-- Dual-WAN setups with automatic failover
-- Monitoring which ISP is currently active
-- Tracking ISP changes over time
+```json
+{
+  "event_type": "NODE_DOWN",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "data": {
+    "node_id": "abc123",
+    "node_name": "Main Router",
+    "node_type": "ROUTER",
+    "group_name": "Server Room",
+    "ip_address": "192.168.1.1",
+    "previous_status": "ONLINE",
+    "new_status": "OFFLINE"
+  }
+}
+```
 
 ## Probe Configuration
 
@@ -364,73 +318,51 @@ void loop() {
 | POST | `/api/groups/:id/unassign-node` | Remove node from group |
 | DELETE | `/api/groups/:id` | Delete group |
 
-### Group Connections
+### Settings
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/group-connections` | List all group connections |
-| GET | `/api/group-connections/:id` | Get single group connection |
-| POST | `/api/group-connections` | Create group connection |
-| PUT | `/api/group-connections/:id` | Update group connection |
-| DELETE | `/api/group-connections/:id` | Delete group connection |
+| GET | `/api/settings` | Get current settings |
+| PUT | `/api/settings` | Update settings |
+| POST | `/api/settings/change-password` | Change admin password |
 
-### Network
+### Setup (No Auth Required)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/network` | Get full network topology |
-| GET | `/api/network/layouts` | List saved layouts |
-| POST | `/api/network/layouts` | Save current layout |
-| POST | `/api/network/layouts/:id/load` | Load a layout |
-
-### Probes
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/probes/status` | Current probe statuses |
-| GET | `/api/probes/summary` | Status summary |
-| GET | `/api/probes/:id/history` | Status history |
-| GET | `/api/probes/outages` | Recent outages |
+| GET | `/api/setup/status` | Check if setup is complete |
+| POST | `/api/setup/initialize` | Initialize system with password |
 
 ## Authentication
 
 Starlight uses a simple admin password authentication system to protect your network monitoring dashboard.
 
-### Default Setup
+### First-Time Setup
 
-When you run `./start.sh`, a secure random password is automatically generated and stored in the `.env` file. The password is displayed at the end of the setup process.
+When you first access Starlight, you'll be guided through a setup wizard to create your admin password. This password is securely hashed and stored in the database.
 
 ### Changing the Password
 
-1. Edit the `.env` file
-2. Update `AUTH_ADMIN_PASSWORD` to your desired password
-3. Restart the services: `./stop.sh && ./start.sh`
+1. Log in to the dashboard
+2. Click the **Settings** icon (gear) in the header
+3. Go to the **Security** tab
+4. Enter your current password and new password
+5. Click **Change Password**
+
+Note: Changing your password will log you out of all sessions.
 
 ### Security Notes
 
-- The admin password protects all API endpoints and the web interface
-- Tokens are generated using HMAC-SHA256 with a session secret
+- Passwords are hashed using PBKDF2 with SHA-512
+- Session tokens use HMAC-SHA256 for generation
 - Tokens are stored in the browser's localStorage
-- For production use, always set a strong `AUTH_ADMIN_PASSWORD` and `AUTH_SESSION_SECRET`
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 4000 | Backend server port |
-| `DATABASE_URL` | - | PostgreSQL connection string |
-| `MQTT_BROKER_URL` | mqtt://localhost:1883 | MQTT broker URL |
-| `PROBE_TIMEOUT` | 30000 | Timeout to mark probe offline (ms) |
-| `AUTH_ADMIN_PASSWORD` | changeme | Admin password for login |
-| `AUTH_SESSION_SECRET` | - | Secret for token generation |
-| `VITE_API_URL` | - | Backend API URL for frontend |
-| `VITE_WS_URL` | - | WebSocket URL for frontend |
+- Session secrets are auto-generated and stored in the database
 
 ## Troubleshooting
 
 ### Probes not showing status updates
 
-1. Check MQTT broker is running: `docker-compose logs mqtt-broker`
+1. Check MQTT broker is running: `docker compose logs mqtt-broker`
 2. Verify probe is publishing to correct topic
 3. Ensure MQTT topic in node config matches probe topic
 
@@ -448,9 +380,15 @@ When you run `./start.sh`, a secure random password is automatically generated a
 
 ### Database connection issues
 
-1. Check PostgreSQL container is healthy: `docker-compose ps`
-2. Verify DATABASE_URL in .env file
-3. Run migrations: `cd backend && npm run db:push`
+1. Check PostgreSQL container is healthy: `docker compose ps`
+2. Verify DATABASE_URL in docker-compose.yml
+3. Check backend logs: `docker compose logs backend`
+
+### Setup wizard not appearing
+
+1. Ensure all containers are running: `docker compose ps`
+2. Check backend logs for errors: `docker compose logs backend`
+3. Try clearing browser cache and localStorage
 
 ### ISP detection not working
 
