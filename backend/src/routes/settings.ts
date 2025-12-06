@@ -9,8 +9,11 @@ import {
   getPublicSettings, 
   updateSettings, 
   changePassword,
+  forceCleanupStatusHistory,
+  getStatusHistoryStats,
   SettingsUpdatePayload 
 } from '../services/settingsService';
+import { restartMonitoringScheduler } from '../services/monitoringService';
 
 export const settingsRouter = Router();
 
@@ -45,6 +48,10 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
  *   probeTimeoutMs?: number,
  *   statusHistoryRetentionDays?: number,
  *   internetCheckTargets?: string,
+ *   monitoringIntervalMs?: number,
+ *   monitoringConcurrency?: number,
+ *   enableStatusHistory?: boolean,
+ *   statusHistoryCleanupEnabled?: boolean,
  * }
  */
 settingsRouter.put('/', async (req: Request, res: Response) => {
@@ -55,6 +62,11 @@ settingsRouter.put('/', async (req: Request, res: Response) => {
       probeTimeoutMs: req.body.probeTimeoutMs,
       statusHistoryRetentionDays: req.body.statusHistoryRetentionDays,
       internetCheckTargets: req.body.internetCheckTargets,
+      // Performance settings
+      monitoringIntervalMs: req.body.monitoringIntervalMs,
+      monitoringConcurrency: req.body.monitoringConcurrency,
+      enableStatusHistory: req.body.enableStatusHistory,
+      statusHistoryCleanupEnabled: req.body.statusHistoryCleanupEnabled,
     };
     
     // Remove undefined values
@@ -64,7 +76,20 @@ settingsRouter.put('/', async (req: Request, res: Response) => {
       }
     });
     
+    // Check if monitoring interval changed - need to restart scheduler
+    const intervalChanged = payload.monitoringIntervalMs !== undefined;
+    
     const settings = await updateSettings(payload);
+    
+    // Restart monitoring scheduler if interval changed
+    if (intervalChanged) {
+      try {
+        await restartMonitoringScheduler();
+        console.log('🔄 Monitoring scheduler restarted with new interval');
+      } catch (err) {
+        console.error('Failed to restart monitoring scheduler:', err);
+      }
+    }
     
     res.json({
       success: true,
@@ -142,5 +167,50 @@ settingsRouter.get('/webhook-test-events', (req: Request, res: Response) => {
       ]
     }
   });
+});
+
+/**
+ * GET /api/settings/status-history-stats
+ * Get statistics about stored status history
+ */
+settingsRouter.get('/status-history-stats', async (req: Request, res: Response) => {
+  try {
+    const stats = await getStatusHistoryStats();
+    
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error('Error getting status history stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get status history statistics',
+    });
+  }
+});
+
+/**
+ * POST /api/settings/cleanup-status-history
+ * Manually trigger cleanup of old status history records
+ */
+settingsRouter.post('/cleanup-status-history', async (req: Request, res: Response) => {
+  try {
+    const deletedCount = await forceCleanupStatusHistory();
+    
+    res.json({
+      success: true,
+      data: {
+        deletedCount,
+      },
+      message: `Cleaned up ${deletedCount} old status history records`,
+    });
+  } catch (error) {
+    console.error('Error cleaning up status history:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to cleanup status history',
+    });
+  }
 });
 

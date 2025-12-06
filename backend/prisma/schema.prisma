@@ -258,6 +258,12 @@ model SystemSettings {
   statusHistoryRetentionDays  Int     @default(30)     // How long to keep status history
   internetCheckTargets        String  @default("8.8.8.8,1.1.1.1,208.67.222.222")  // IPs for internet checks
   
+  // Performance Settings
+  monitoringIntervalMs        Int     @default(60000)  // How often to run monitoring checks (ms)
+  monitoringConcurrency       Int     @default(10)     // Max parallel node checks
+  enableStatusHistory         Boolean @default(true)   // Whether to record status history
+  statusHistoryCleanupEnabled Boolean @default(true)   // Auto-cleanup old status history
+  
   // Timestamps
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

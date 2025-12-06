@@ -21,7 +21,7 @@ export type WebhookEventType =
 export interface WebhookEvent {
   event_type: WebhookEventType;
   timestamp: string;
-  data: Record<string, unknown>;
+  data: IspChangedData | NodeStatusData | InternetStatusData | GroupDegradedData | Record<string, unknown>;
 }
 
 // ISP Changed event data

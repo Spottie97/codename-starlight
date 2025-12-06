@@ -18,6 +18,7 @@ import { authMiddleware } from './middleware/auth';
 import { initWebSocketServer } from './services/websocketService';
 import { initMqttService } from './services/mqttService';
 import { startMonitoringScheduler, stopMonitoringScheduler } from './services/monitoringService';
+import { getPerformanceConfig } from './services/settingsService';
 
 // Load environment variables
 dotenv.config();
@@ -86,7 +87,17 @@ async function startServer() {
     console.log('✅ MQTT service initialized');
 
     // Start monitoring scheduler for active monitoring (ping/snmp/http)
-    const monitoringInterval = parseInt(process.env.MONITORING_INTERVAL || '30000', 10);
+    // Get interval from database settings (with fallback to env var for backwards compatibility)
+    let monitoringInterval: number;
+    try {
+      const perfConfig = await getPerformanceConfig();
+      monitoringInterval = perfConfig.monitoringIntervalMs;
+      console.log(`📊 Using monitoring interval from settings: ${monitoringInterval / 1000}s`);
+    } catch {
+      // Fallback to environment variable if settings not available
+      monitoringInterval = parseInt(process.env.MONITORING_INTERVAL || '60000', 10);
+      console.log(`📊 Using monitoring interval from env: ${monitoringInterval / 1000}s`);
+    }
     startMonitoringScheduler(monitoringInterval);
     console.log('✅ Monitoring scheduler started');
 

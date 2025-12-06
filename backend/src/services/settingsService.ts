@@ -23,6 +23,11 @@ export interface SystemSettingsData {
   probeTimeoutMs: number;
   statusHistoryRetentionDays: number;
   internetCheckTargets: string;
+  // Performance settings
+  monitoringIntervalMs: number;
+  monitoringConcurrency: number;
+  enableStatusHistory: boolean;
+  statusHistoryCleanupEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +40,11 @@ export interface PublicSettings {
   probeTimeoutMs: number;
   statusHistoryRetentionDays: number;
   internetCheckTargets: string;
+  // Performance settings
+  monitoringIntervalMs: number;
+  monitoringConcurrency: number;
+  enableStatusHistory: boolean;
+  statusHistoryCleanupEnabled: boolean;
 }
 
 // Settings update payload
@@ -44,6 +54,11 @@ export interface SettingsUpdatePayload {
   probeTimeoutMs?: number;
   statusHistoryRetentionDays?: number;
   internetCheckTargets?: string;
+  // Performance settings
+  monitoringIntervalMs?: number;
+  monitoringConcurrency?: number;
+  enableStatusHistory?: boolean;
+  statusHistoryCleanupEnabled?: boolean;
 }
 
 /**
@@ -187,6 +202,11 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     probeTimeoutMs: settings.probeTimeoutMs,
     statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
     internetCheckTargets: settings.internetCheckTargets,
+    // Performance settings
+    monitoringIntervalMs: settings.monitoringIntervalMs,
+    monitoringConcurrency: settings.monitoringConcurrency,
+    enableStatusHistory: settings.enableStatusHistory,
+    statusHistoryCleanupEnabled: settings.statusHistoryCleanupEnabled,
   };
 }
 
@@ -211,6 +231,15 @@ export async function updateSettings(payload: SettingsUpdatePayload): Promise<Pu
     }
   }
   
+  // Validate performance settings
+  if (payload.monitoringIntervalMs !== undefined && payload.monitoringIntervalMs < 10000) {
+    throw new Error('Monitoring interval must be at least 10 seconds (10000ms)');
+  }
+  
+  if (payload.monitoringConcurrency !== undefined && (payload.monitoringConcurrency < 1 || payload.monitoringConcurrency > 50)) {
+    throw new Error('Monitoring concurrency must be between 1 and 50');
+  }
+  
   await prisma.systemSettings.update({
     where: { id: 'system' },
     data: {
@@ -219,6 +248,11 @@ export async function updateSettings(payload: SettingsUpdatePayload): Promise<Pu
       ...(payload.probeTimeoutMs !== undefined && { probeTimeoutMs: payload.probeTimeoutMs }),
       ...(payload.statusHistoryRetentionDays !== undefined && { statusHistoryRetentionDays: payload.statusHistoryRetentionDays }),
       ...(payload.internetCheckTargets !== undefined && { internetCheckTargets: payload.internetCheckTargets }),
+      // Performance settings
+      ...(payload.monitoringIntervalMs !== undefined && { monitoringIntervalMs: payload.monitoringIntervalMs }),
+      ...(payload.monitoringConcurrency !== undefined && { monitoringConcurrency: payload.monitoringConcurrency }),
+      ...(payload.enableStatusHistory !== undefined && { enableStatusHistory: payload.enableStatusHistory }),
+      ...(payload.statusHistoryCleanupEnabled !== undefined && { statusHistoryCleanupEnabled: payload.statusHistoryCleanupEnabled }),
     }
   });
   
@@ -306,6 +340,111 @@ export async function getMonitoringConfig(): Promise<{
     probeTimeoutMs: settings.probeTimeoutMs,
     statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
     internetCheckTargets: settings.internetCheckTargets.split(',').map(ip => ip.trim()).filter(Boolean),
+  };
+}
+
+/**
+ * Get performance configuration
+ * Used by monitoring service for interval and concurrency settings
+ */
+export async function getPerformanceConfig(): Promise<{
+  monitoringIntervalMs: number;
+  monitoringConcurrency: number;
+  enableStatusHistory: boolean;
+  statusHistoryCleanupEnabled: boolean;
+  statusHistoryRetentionDays: number;
+}> {
+  const settings = await getOrCreateSettings();
+  
+  return {
+    monitoringIntervalMs: settings.monitoringIntervalMs,
+    monitoringConcurrency: settings.monitoringConcurrency,
+    enableStatusHistory: settings.enableStatusHistory,
+    statusHistoryCleanupEnabled: settings.statusHistoryCleanupEnabled,
+    statusHistoryRetentionDays: settings.statusHistoryRetentionDays,
+  };
+}
+
+/**
+ * Cleanup old status history records
+ * Deletes records older than the retention period
+ * @returns Number of records deleted
+ */
+export async function cleanupStatusHistory(): Promise<number> {
+  const settings = await getOrCreateSettings();
+  
+  if (!settings.statusHistoryCleanupEnabled) {
+    console.log('📊 Status history cleanup is disabled');
+    return 0;
+  }
+  
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - settings.statusHistoryRetentionDays);
+  
+  const result = await prisma.probeStatus.deleteMany({
+    where: {
+      timestamp: {
+        lt: cutoffDate,
+      },
+    },
+  });
+  
+  if (result.count > 0) {
+    console.log(`🗑️ Cleaned up ${result.count} old status history records`);
+  }
+  
+  return result.count;
+}
+
+/**
+ * Force cleanup status history (ignores enabled/disabled setting)
+ * Used for manual cleanup triggered by user
+ * @returns Number of records deleted
+ */
+export async function forceCleanupStatusHistory(): Promise<number> {
+  const settings = await getOrCreateSettings();
+  
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - settings.statusHistoryRetentionDays);
+  
+  const result = await prisma.probeStatus.deleteMany({
+    where: {
+      timestamp: {
+        lt: cutoffDate,
+      },
+    },
+  });
+  
+  console.log(`🗑️ Force cleaned up ${result.count} old status history records`);
+  
+  return result.count;
+}
+
+/**
+ * Get status history statistics
+ * Returns count and date range of stored history
+ */
+export async function getStatusHistoryStats(): Promise<{
+  totalRecords: number;
+  oldestRecord: Date | null;
+  newestRecord: Date | null;
+}> {
+  const [count, oldest, newest] = await Promise.all([
+    prisma.probeStatus.count(),
+    prisma.probeStatus.findFirst({
+      orderBy: { timestamp: 'asc' },
+      select: { timestamp: true },
+    }),
+    prisma.probeStatus.findFirst({
+      orderBy: { timestamp: 'desc' },
+      select: { timestamp: true },
+    }),
+  ]);
+  
+  return {
+    totalRecords: count,
+    oldestRecord: oldest?.timestamp || null,
+    newestRecord: newest?.timestamp || null,
   };
 }
 

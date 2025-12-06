@@ -40,7 +40,18 @@ async function queryIspApi(): Promise<IspInfo | null> {
       return null;
     }
 
-    const data = await response.json();
+    const data = await response.json() as {
+      status: string;
+      message?: string;
+      query: string;
+      isp: string;
+      org: string;
+      as: string;
+      city: string;
+      region: string;
+      country: string;
+      timezone: string;
+    };
 
     if (data.status !== 'success') {
       console.error('ISP API returned error:', data.message);
@@ -247,7 +258,7 @@ export async function detectAndSwitchIsp(): Promise<{
   });
 
   // Trigger webhook for n8n integration
-  if (switched && isWebhookEnabled()) {
+  if (switched && await isWebhookEnabled()) {
     triggerIspChanged({
       new_isp: ispInfo.isp,
       public_ip: ispInfo.publicIp,

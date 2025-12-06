@@ -3,7 +3,15 @@
  * Uses the 'net-snmp' package for SNMP v1/v2c/v3 queries
  */
 
-import snmp from 'net-snmp';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const snmp = require('net-snmp');
+
+// Type definitions for net-snmp
+interface SNMPVarBind {
+  oid: string;
+  type: number;
+  value: Buffer | number | string;
+}
 
 export interface SNMPResult {
   alive: boolean;
@@ -62,7 +70,7 @@ export async function snmpQuery(
     // Query basic system info
     const oids = [OID.sysUpTime, OID.sysName, OID.sysDescr];
 
-    session.get(oids, (error: Error | null, varbinds: snmp.VarBind[]) => {
+    session.get(oids, (error: Error | null, varbinds: SNMPVarBind[]) => {
       const latency = Date.now() - startTime;
       session.close();
 

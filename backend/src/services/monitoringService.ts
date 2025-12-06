@@ -17,6 +17,7 @@ import {
   triggerGroupDegraded,
   isWebhookEnabled 
 } from './webhookService';
+import { getPerformanceConfig, cleanupStatusHistory } from './settingsService';
 
 // Types
 type MonitoringMethod = 'MQTT' | 'PING' | 'SNMP' | 'HTTP' | 'NONE';
@@ -41,7 +42,9 @@ interface InternetCheckResult {
 
 // Monitoring interval handle
 let monitoringInterval: NodeJS.Timeout | null = null;
+let cleanupInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+let currentIntervalMs: number = 60000;
 
 // Track group health for degradation detection
 const groupHealthCache = new Map<string, { total: number; offline: number }>();
@@ -49,6 +52,7 @@ const groupHealthCache = new Map<string, { total: number; offline: number }>();
 // Default check interval in milliseconds (minimum 10 seconds)
 const MIN_CHECK_INTERVAL = 10000;
 const DEFAULT_CHECK_INTERVAL = 60000; // 60 seconds - reduced frequency for better performance
+const CLEANUP_INTERVAL = 3600000; // 1 hour - cleanup old status history periodically
 
 /**
  * Check a single node based on its monitoring method
@@ -203,7 +207,7 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
       console.log(`${emoji} ${node.name}: Internet ${node.internetStatus} → ${newStatus}`);
 
       // Trigger webhook for internet status change
-      if (isWebhookEnabled()) {
+      if (await isWebhookEnabled()) {
         const webhookData = {
           node_id: node.id,
           node_name: node.name,
@@ -438,6 +442,11 @@ async function runMonitoringCycle(): Promise<void> {
   const startTime = Date.now();
 
   try {
+    // Get performance configuration from settings
+    const perfConfig = await getPerformanceConfig();
+    const concurrencyLimit = perfConfig.monitoringConcurrency;
+    const enableStatusHistory = perfConfig.enableStatusHistory;
+
     // Get all nodes with active monitoring (not MQTT or NONE)
     const nodes = await prisma.node.findMany({
       where: {
@@ -463,14 +472,13 @@ async function runMonitoringCycle(): Promise<void> {
       return;
     }
 
-    console.log(`🔍 Running monitoring cycle for ${nodes.length} nodes...`);
+    console.log(`🔍 Running monitoring cycle for ${nodes.length} nodes (concurrency: ${concurrencyLimit})...`);
 
-    // Check all nodes in parallel (with concurrency limit)
-    const CONCURRENCY_LIMIT = 10;
+    // Check all nodes in parallel (with configurable concurrency limit)
     const results: MonitoringResult[] = [];
 
-    for (let i = 0; i < nodes.length; i += CONCURRENCY_LIMIT) {
-      const batch = nodes.slice(i, i + CONCURRENCY_LIMIT);
+    for (let i = 0; i < nodes.length; i += concurrencyLimit) {
+      const batch = nodes.slice(i, i + concurrencyLimit);
       const batchResults = await Promise.all(
         batch.map((node) => checkNode(node as any))
       );
@@ -498,20 +506,22 @@ async function runMonitoringCycle(): Promise<void> {
           lastSeen: result.status === 'ONLINE' ? now : undefined,
         });
 
-        // Collect status history only on actual changes
-        if (statusChanged) {
+        // Collect status history only on actual changes (if enabled)
+        if (statusChanged && enableStatusHistory) {
           statusHistoryCreates.push({
             nodeId: result.nodeId,
             status: result.status,
             latency: result.latency,
             message: result.error || null,
           });
-          
+        }
+        
+        if (statusChanged) {
           const emoji = result.status === 'ONLINE' ? '✅' : '❌';
           console.log(`${emoji} ${node.name}: ${node.status} → ${result.status}`);
 
           // Trigger webhook for node status change
-          if (isWebhookEnabled()) {
+          if (await isWebhookEnabled()) {
             const webhookData = {
               node_id: node.id,
               node_name: node.name,
@@ -542,30 +552,33 @@ async function runMonitoringCycle(): Promise<void> {
 
     // Execute all database updates in a single transaction (much more efficient)
     if (nodeUpdates.length > 0) {
-      await prisma.$transaction([
-        // Batch node updates
-        ...nodeUpdates.map(update => 
-          prisma.node.update({
-            where: { id: update.nodeId },
-            data: {
-              status: update.status,
-              latency: update.latency,
-              lastSeen: update.lastSeen,
-            },
-          })
-        ),
-        // Batch status history creates (only for actual changes)
-        ...statusHistoryCreates.map(create =>
-          prisma.probeStatus.create({
-            data: {
-              nodeId: create.nodeId,
-              status: create.status,
-              latency: create.latency,
-              message: create.message,
-            },
-          })
-        ),
-      ]);
+      // Batch node updates
+      const nodeUpdateOps = nodeUpdates.map(update => 
+        prisma.node.update({
+          where: { id: update.nodeId },
+          data: {
+            status: update.status,
+            latency: update.latency,
+            lastSeen: update.lastSeen,
+          },
+        })
+      );
+      
+      // Status history creates (if enabled)
+      const historyOps = enableStatusHistory && statusHistoryCreates.length > 0
+        ? statusHistoryCreates.map(create =>
+            prisma.probeStatus.create({
+              data: {
+                nodeId: create.nodeId,
+                status: create.status,
+                latency: create.latency,
+                message: create.message,
+              },
+            })
+          )
+        : [];
+      
+      await prisma.$transaction([...nodeUpdateOps, ...historyOps]);
     }
 
     // Broadcast all WebSocket updates in a single batched message (much more efficient)
@@ -589,7 +602,7 @@ async function runMonitoringCycle(): Promise<void> {
     await detectAndSwitchIsp();
 
     // Check for group degradation (webhook trigger)
-    if (isWebhookEnabled()) {
+    if (await isWebhookEnabled()) {
       await checkGroupDegradation();
     }
 
@@ -605,7 +618,7 @@ async function runMonitoringCycle(): Promise<void> {
 
 /**
  * Start the monitoring scheduler
- * @param intervalMs - Check interval in milliseconds (default: 30000)
+ * @param intervalMs - Check interval in milliseconds (default: 60000)
  */
 export function startMonitoringScheduler(intervalMs: number = DEFAULT_CHECK_INTERVAL): void {
   if (monitoringInterval) {
@@ -615,6 +628,7 @@ export function startMonitoringScheduler(intervalMs: number = DEFAULT_CHECK_INTE
 
   // Ensure minimum interval
   const interval = Math.max(intervalMs, MIN_CHECK_INTERVAL);
+  currentIntervalMs = interval;
   
   console.log(`🚀 Starting monitoring scheduler (interval: ${interval / 1000}s)`);
 
@@ -627,6 +641,18 @@ export function startMonitoringScheduler(intervalMs: number = DEFAULT_CHECK_INTE
   monitoringInterval = setInterval(() => {
     runMonitoringCycle();
   }, interval);
+  
+  // Start cleanup interval for status history
+  if (!cleanupInterval) {
+    cleanupInterval = setInterval(async () => {
+      try {
+        await cleanupStatusHistory();
+      } catch (error) {
+        console.error('Error in status history cleanup:', error);
+      }
+    }, CLEANUP_INTERVAL);
+    console.log('🗑️ Status history cleanup scheduled (every hour)');
+  }
 }
 
 /**
@@ -638,7 +664,51 @@ export function stopMonitoringScheduler(): void {
     monitoringInterval = null;
     console.log('🛑 Monitoring scheduler stopped');
   }
+  
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
 }
+
+/**
+ * Restart the monitoring scheduler with new settings from database
+ * Called when settings are updated
+ */
+export async function restartMonitoringScheduler(): Promise<void> {
+  console.log('🔄 Restarting monitoring scheduler with new settings...');
+  
+  // Stop current scheduler
+  if (monitoringInterval) {
+    clearInterval(monitoringInterval);
+    monitoringInterval = null;
+  }
+  
+  // Get new interval from settings
+  const perfConfig = await getPerformanceConfig();
+  const newInterval = Math.max(perfConfig.monitoringIntervalMs, MIN_CHECK_INTERVAL);
+  
+  if (newInterval !== currentIntervalMs) {
+    console.log(`📊 Monitoring interval changed: ${currentIntervalMs / 1000}s → ${newInterval / 1000}s`);
+  }
+  
+  currentIntervalMs = newInterval;
+  
+  // Start new scheduler
+  monitoringInterval = setInterval(() => {
+    runMonitoringCycle();
+  }, newInterval);
+  
+  console.log(`✅ Monitoring scheduler restarted (interval: ${newInterval / 1000}s)`);
+}
+
+/**
+ * Get current monitoring interval
+ */
+export function getCurrentMonitoringInterval(): number {
+  return currentIntervalMs;
+}
+
 
 /**
  * Manually trigger a monitoring cycle

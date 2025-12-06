@@ -25,7 +25,7 @@ export async function pingHost(host: string, timeout: number = 5): Promise<PingR
 
     return {
       alive: result.alive,
-      latency: result.alive && result.time !== 'unknown' ? Math.round(Number(result.time)) : null,
+      latency: result.alive && typeof result.time === 'number' ? Math.round(result.time) : null,
     };
   } catch (error) {
     console.error(`Ping error for ${host}:`, error);
