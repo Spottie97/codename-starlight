@@ -74,6 +74,12 @@ docker compose up -d
 - **Backend API:** http://localhost:4000
 - **MQTT Broker:** mqtt://localhost:1883
 
+**Using a Different Port (if 8080 is already in use):**
+```bash
+STARLIGHT_PORT=3000 docker compose up -d
+```
+Then access the UI at `http://localhost:3000`
+
 **To stop:**
 ```bash
 docker compose down
@@ -84,9 +90,25 @@ docker compose down
 docker compose down -v
 ```
 
-### Configuration
+### Port Configuration
 
-All application settings can be managed through the **Settings** page in the web UI:
+If you have port conflicts, you can customize the ports using environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STARLIGHT_PORT` | 8080 | Web UI port |
+| `STARLIGHT_API_PORT` | 4000 | Backend API port |
+| `STARLIGHT_MQTT_PORT` | 1883 | MQTT broker port |
+| `STARLIGHT_DB_PORT` | 5432 | PostgreSQL port |
+
+Example with custom ports:
+```bash
+STARLIGHT_PORT=3000 STARLIGHT_MQTT_PORT=1884 docker compose up -d
+```
+
+### Application Settings
+
+All application settings are managed through the **Settings** page in the web UI (click the gear icon):
 
 | Setting | Description |
 |---------|-------------|
@@ -96,8 +118,6 @@ All application settings can be managed through the **Settings** page in the web
 | **Probe Timeout** | Time before marking a probe offline |
 | **History Retention** | How long to keep status history |
 | **Internet Check Targets** | IPs used for internet connectivity checks |
-
-Access settings by clicking the gear icon in the top-right corner of the dashboard.
 
 ### Advanced Setup (Optional)
 
