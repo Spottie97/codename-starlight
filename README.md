@@ -45,18 +45,23 @@ A local network monitoring tool with a game-like visualization interface. Monito
 
 - Docker and Docker Compose
 
-### One-Command Setup
+### One-Command Install
+
+Copy and paste this command to download and start Starlight:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/codename-starlight.git
-cd codename-starlight
-
-# Start all services
-docker compose up -d
+curl -L https://github.com/Spottie97/codename-starlight/archive/refs/heads/main.tar.gz | tar xz && cd codename-starlight-main && docker compose up -d
 ```
 
 That's it! The application will start and guide you through the initial setup.
+
+### Alternative: Clone with Git
+
+```bash
+git clone https://github.com/Spottie97/codename-starlight.git
+cd codename-starlight
+docker compose up -d
+```
 
 **First-time Setup:**
 1. Open http://localhost:8080 in your browser
