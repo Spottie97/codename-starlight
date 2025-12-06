@@ -1,5 +1,5 @@
 // Network node types
-export type NodeType = 'PROBE' | 'ROUTER' | 'SWITCH' | 'SERVER' | 'GATEWAY' | 'ACCESS_POINT' | 'FIREWALL' | 'VIRTUAL';
+export type NodeType = 'PROBE' | 'ROUTER' | 'SWITCH' | 'SERVER' | 'GATEWAY' | 'ACCESS_POINT' | 'FIREWALL' | 'VIRTUAL' | 'INTERNET' | 'MAIN_LINK';
 
 // Status types
 export type Status = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'UNKNOWN';
@@ -15,6 +15,9 @@ export interface NetworkNode {
   description: string | null;
   positionX: number;
   positionY: number;
+  
+  // Group assignment
+  groupId: string | null;
   
   // Monitoring configuration
   monitoringMethod: MonitoringMethod;
@@ -33,10 +36,33 @@ export interface NetworkNode {
   internetStatus: Status;
   internetLastCheck: string | null;
   
+  // ISP configuration (for INTERNET nodes)
+  ispName: string | null;
+  ispOrganization: string | null;
+  
+  // Internet access checking
+  checkInternetAccess: boolean;
+  
   // Visual
   color: string;
   icon: string | null;
   
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Node group - visual grouping zone for organizing nodes
+export interface NodeGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  positionX: number;
+  positionY: number;
+  width: number;
+  height: number;
+  color: string;
+  opacity: number;
+  zIndex: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +72,20 @@ export interface Connection {
   id: string;
   sourceNodeId: string;
   targetNodeId: string;
+  label: string | null;
+  bandwidth: string | null;
+  isActiveSource: boolean;
+  color: string;
+  animated: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Connection between groups (inter-area/department links)
+export interface GroupConnection {
+  id: string;
+  sourceGroupId: string;
+  targetGroupId: string;
   label: string | null;
   bandwidth: string | null;
   color: string;
@@ -58,6 +98,8 @@ export interface Connection {
 export interface NetworkTopology {
   nodes: NetworkNode[];
   connections: Connection[];
+  groups: NodeGroup[];
+  groupConnections: GroupConnection[];
 }
 
 // Create/Update DTOs
@@ -90,6 +132,9 @@ export interface UpdateNodeDTO {
   positionX?: number;
   positionY?: number;
   
+  // Group assignment
+  groupId?: string | null;
+  
   // Monitoring configuration
   monitoringMethod?: MonitoringMethod;
   ipAddress?: string | null;
@@ -104,9 +149,41 @@ export interface UpdateNodeDTO {
   color?: string;
   icon?: string | null;
   
+  // ISP configuration (for INTERNET nodes)
+  ispName?: string | null;
+  ispOrganization?: string | null;
+  
+  // Internet access checking
+  checkInternetAccess?: boolean;
+  
   // Status
   status?: Status;
   internetStatus?: Status;
+}
+
+// Group DTOs
+export interface CreateGroupDTO {
+  name: string;
+  description?: string;
+  positionX?: number;
+  positionY?: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  opacity?: number;
+  zIndex?: number;
+}
+
+export interface UpdateGroupDTO {
+  name?: string;
+  description?: string | null;
+  positionX?: number;
+  positionY?: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  opacity?: number;
+  zIndex?: number;
 }
 
 export interface CreateConnectionDTO {
@@ -119,6 +196,23 @@ export interface CreateConnectionDTO {
 }
 
 export interface UpdateConnectionDTO {
+  label?: string | null;
+  bandwidth?: string | null;
+  color?: string;
+  animated?: boolean;
+}
+
+// Group Connection DTOs
+export interface CreateGroupConnectionDTO {
+  sourceGroupId: string;
+  targetGroupId: string;
+  label?: string;
+  bandwidth?: string;
+  color?: string;
+  animated?: boolean;
+}
+
+export interface UpdateGroupConnectionDTO {
   label?: string | null;
   bandwidth?: string | null;
   color?: string;
@@ -144,13 +238,36 @@ export interface ProbeStatusSummary {
 // WebSocket message types
 export type WSMessageType = 
   | 'NODE_STATUS_UPDATE'
+  | 'BATCH_STATUS_UPDATE'
   | 'NODE_CREATED'
   | 'NODE_UPDATED'
   | 'NODE_DELETED'
   | 'CONNECTION_CREATED'
   | 'CONNECTION_DELETED'
+  | 'CONNECTION_ACTIVE_SOURCE_CHANGED'
+  | 'GROUP_CREATED'
+  | 'GROUP_UPDATED'
+  | 'GROUP_DELETED'
+  | 'GROUP_CONNECTION_CREATED'
+  | 'GROUP_CONNECTION_DELETED'
+  | 'NODE_GROUP_CHANGED'
   | 'NETWORK_UPDATE'
+  | 'ISP_DETECTED'
   | 'PING';
+
+// ISP Information
+export interface IspInfo {
+  publicIp: string;
+  isp: string;
+  org: string;
+  as: string;
+  city: string;
+  region: string;
+  country: string;
+  timezone: string;
+  matchedNodeId?: string | null;
+  matchedNodeName?: string | null;
+}
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;
@@ -162,9 +279,14 @@ export interface NodeStatusUpdatePayload {
   nodeId: string;
   status?: Status;
   internetStatus?: Status;
-  latency?: number;
+  latency?: number | null;
   lastSeen?: string;
   internetLastCheck?: string;
+}
+
+// Batched status updates - more efficient for monitoring cycles
+export interface BatchStatusUpdatePayload {
+  updates: NodeStatusUpdatePayload[];
 }
 
 // API Response wrapper
@@ -198,7 +320,7 @@ export interface CanvasState {
 }
 
 // Editor mode
-export type EditorMode = 'select' | 'add' | 'connect' | 'delete';
+export type EditorMode = 'select' | 'add' | 'connect' | 'connectGroups' | 'delete' | 'group';
 
 // Node icon mapping
 export const NODE_ICONS: Record<NodeType, string> = {
@@ -210,6 +332,8 @@ export const NODE_ICONS: Record<NodeType, string> = {
   ACCESS_POINT: 'wifi',
   FIREWALL: 'shield',
   VIRTUAL: 'box',
+  INTERNET: 'cloud',
+  MAIN_LINK: 'network',
 };
 
 // Status colors
@@ -230,6 +354,8 @@ export const NODE_TYPE_COLORS: Record<NodeType, string> = {
   ACCESS_POINT: '#8b5cf6',
   FIREWALL: '#ef4444',
   VIRTUAL: '#6b7280',
+  INTERNET: '#00bfff',   // Deep sky blue - represents external cloud/internet
+  MAIN_LINK: '#ffd700',  // Gold - represents main entry point
 };
 
 // Monitoring method labels
@@ -251,6 +377,8 @@ export const NODE_TYPE_LABELS: Record<NodeType, string> = {
   ACCESS_POINT: 'Access Point',
   FIREWALL: 'Firewall',
   VIRTUAL: 'Virtual',
+  INTERNET: 'Internet',
+  MAIN_LINK: 'Main Link',
 };
 
 // Default monitoring methods per node type
@@ -263,7 +391,23 @@ export const DEFAULT_MONITORING_METHOD: Record<NodeType, MonitoringMethod> = {
   ACCESS_POINT: 'PING',
   FIREWALL: 'PING',
   VIRTUAL: 'NONE',
+  INTERNET: 'NONE',    // Internet nodes use special external ping check
+  MAIN_LINK: 'PING',   // Main link nodes can be pinged locally
 };
+
+// Preset group colors for selection
+export const GROUP_COLORS = [
+  '#3b82f6', // Blue
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#8b5cf6', // Violet
+  '#ef4444', // Red
+  '#06b6d4', // Cyan
+  '#ec4899', // Pink
+  '#84cc16', // Lime
+  '#f97316', // Orange
+  '#6366f1', // Indigo
+];
 
 
 

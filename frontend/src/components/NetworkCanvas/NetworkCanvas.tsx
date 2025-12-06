@@ -9,15 +9,19 @@ import {
   Wifi, 
   Shield, 
   Box,
-  X
+  X,
+  Cloud,
+  Network
 } from 'lucide-react';
-import { useNetworkStore, selectNodes, selectConnections, selectEditorMode, selectCanvasState } from '../../store/networkStore';
+import { useNetworkStore, selectNodes, selectConnections, selectGroups, selectGroupConnections, selectEditorMode, selectCanvasState } from '../../store/networkStore';
 import { NetworkNode } from './NetworkNode';
 import { ConnectionLine } from './ConnectionLine';
+import { GroupConnectionLine } from './GroupConnectionLine';
 import { GridBackground } from './GridBackground';
-import { nodesApi, connectionsApi } from '../../services/api';
-import type { CreateNodeDTO, NetworkNode as INetworkNode, NodeType } from '../../types/network';
-import { NODE_TYPE_COLORS, DEFAULT_MONITORING_METHOD, NODE_TYPE_LABELS } from '../../types/network';
+import { GroupZone } from './GroupZone';
+import { nodesApi, connectionsApi, groupsApi, groupConnectionsApi } from '../../services/api';
+import type { CreateNodeDTO, NetworkNode as INetworkNode, NodeType, NodeGroup, CreateGroupDTO } from '../../types/network';
+import { NODE_TYPE_COLORS, DEFAULT_MONITORING_METHOD, NODE_TYPE_LABELS, GROUP_COLORS } from '../../types/network';
 import { cn } from '../../lib/utils';
 
 // Node type options for the selector
@@ -29,6 +33,8 @@ const NODE_TYPE_OPTIONS: { value: NodeType; label: string; icon: React.ReactNode
   { value: 'GATEWAY', label: 'Gateway', icon: <Globe size={20} />, description: 'Internet gateway/modem' },
   { value: 'ACCESS_POINT', label: 'Access Point', icon: <Wifi size={20} />, description: 'Wireless access point' },
   { value: 'FIREWALL', label: 'Firewall', icon: <Shield size={20} />, description: 'Network firewall' },
+  { value: 'INTERNET', label: 'Internet', icon: <Cloud size={20} />, description: 'WAN/ISP connection entry point' },
+  { value: 'MAIN_LINK', label: 'Main Link', icon: <Network size={20} />, description: 'Main network entry point' },
   { value: 'VIRTUAL', label: 'Virtual', icon: <Box size={20} />, description: 'Visual grouping (no monitoring)' },
 ];
 
@@ -46,11 +52,16 @@ export function NetworkCanvas() {
   
   const nodes = useNetworkStore(selectNodes);
   const connections = useNetworkStore(selectConnections);
+  const groups = useNetworkStore(selectGroups);
+  const groupConnections = useNetworkStore(selectGroupConnections);
   const editorMode = useNetworkStore(selectEditorMode);
   const canvas = useNetworkStore(selectCanvasState);
   
   const {
     setSelectedNode,
+    setSelectedGroup,
+    selectedGroupId,
+    selectedNodeId,
     addNode,
     updateNodePosition,
     connectingFromId,
@@ -59,6 +70,17 @@ export function NetworkCanvas() {
     addConnection,
     removeNode,
     removeConnection,
+    addGroup,
+    updateGroup,
+    updateGroupPosition,
+    removeGroup,
+    assignNodeToGroup,
+    // Group connection actions
+    connectingFromGroupId,
+    startConnectingGroups,
+    cancelConnectingGroups,
+    addGroupConnection,
+    removeGroupConnection,
   } = useNetworkStore();
 
   // Handle resize
@@ -83,13 +105,48 @@ export function NetworkCanvas() {
       if (e.key === 'Escape') {
         setPendingNode(null);
         cancelConnecting();
+        cancelConnectingGroups();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelConnecting]);
+  }, [cancelConnecting, cancelConnectingGroups]);
 
-  // Handle canvas click for adding nodes
+  // Handle zoom with mouse wheel / trackpad
+  const handleWheel = useCallback((e: any) => {
+    e.evt.preventDefault();
+    
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    
+    // Get current state directly for responsiveness (avoids stale closures)
+    const state = useNetworkStore.getState();
+    const { scale: oldScale, offsetX, offsetY } = state.canvas;
+    
+    // Calculate pointer position relative to canvas (before zoom)
+    const mousePointTo = {
+      x: (pointer.x - offsetX) / oldScale,
+      y: (pointer.y - offsetY) / oldScale,
+    };
+    
+    // Smooth zoom factor based on delta
+    // Normalize delta for consistent behavior across devices
+    const delta = -e.evt.deltaY;
+    const zoomIntensity = 0.009;
+    const scaleFactor = 1 + delta * zoomIntensity;
+    
+    const newScale = Math.max(0.1, Math.min(3, oldScale * scaleFactor));
+    
+    // Calculate new offset to keep the point under the mouse stationary
+    const newOffsetX = pointer.x - mousePointTo.x * newScale;
+    const newOffsetY = pointer.y - mousePointTo.y * newScale;
+    
+    // Single state update for better performance
+    state.setCanvasTransform(newScale, newOffsetX, newOffsetY);
+  }, []);
+
+  // Handle canvas click for adding nodes/groups
   const handleStageClick = useCallback(async (e: any) => {
     // Only handle clicks on the stage itself (not on nodes)
     if (e.target !== e.currentTarget) return;
@@ -109,15 +166,46 @@ export function NetworkCanvas() {
         screenX: pointer.x,
         screenY: pointer.y,
       });
+    } else if (editorMode === 'group') {
+      // Create a new group at click position
+      const stage = e.target.getStage();
+      const pointer = stage.getPointerPosition();
+      
+      const x = (pointer.x - canvas.offsetX) / canvas.scale;
+      const y = (pointer.y - canvas.offsetY) / canvas.scale;
+
+      const newGroup: CreateGroupDTO = {
+        name: `Group ${groups.length + 1}`,
+        positionX: x,
+        positionY: y,
+        width: 300,
+        height: 200,
+        color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+        opacity: 0.15,
+      };
+
+      try {
+        const response = await groupsApi.create(newGroup);
+        if (response.success && response.data) {
+          addGroup(response.data);
+          setSelectedGroup(response.data.id);
+        }
+      } catch (error) {
+        console.error('Failed to create group:', error);
+      }
     } else if (editorMode === 'select') {
       setSelectedNode(null);
+      setSelectedGroup(null);
     }
 
     // Cancel connecting if clicking on empty space
     if (connectingFromId) {
       cancelConnecting();
     }
-  }, [editorMode, canvas, setSelectedNode, connectingFromId, cancelConnecting]);
+    if (connectingFromGroupId) {
+      cancelConnectingGroups();
+    }
+  }, [editorMode, canvas, setSelectedNode, setSelectedGroup, connectingFromId, cancelConnecting, connectingFromGroupId, cancelConnectingGroups, groups.length, addGroup]);
 
   // Create node with selected type
   const handleCreateNode = async (type: NodeType) => {
@@ -204,11 +292,162 @@ export function NetworkCanvas() {
     }
   }, [editorMode, removeConnection]);
 
+  // Handle group connection click
+  const handleGroupConnectionClick = useCallback(async (connectionId: string) => {
+    if (editorMode === 'delete') {
+      try {
+        const response = await groupConnectionsApi.delete(connectionId);
+        if (response.success) {
+          removeGroupConnection(connectionId);
+        }
+      } catch (error) {
+        console.error('Failed to delete group connection:', error);
+      }
+    }
+  }, [editorMode, removeGroupConnection]);
+
+  // Handle group click
+  const handleGroupClick = useCallback(async (group: NodeGroup) => {
+    if (editorMode === 'select') {
+      setSelectedGroup(group.id);
+    } else if (editorMode === 'connectGroups') {
+      if (!connectingFromGroupId) {
+        startConnectingGroups(group.id);
+      } else if (connectingFromGroupId !== group.id) {
+        // Complete group connection
+        try {
+          const response = await groupConnectionsApi.create({
+            sourceGroupId: connectingFromGroupId,
+            targetGroupId: group.id,
+          });
+          if (response.success && response.data) {
+            addGroupConnection(response.data);
+          }
+        } catch (error) {
+          console.error('Failed to create group connection:', error);
+        }
+        cancelConnectingGroups();
+      }
+    } else if (editorMode === 'delete') {
+      try {
+        const response = await groupsApi.delete(group.id);
+        if (response.success) {
+          removeGroup(group.id);
+        }
+      } catch (error) {
+        console.error('Failed to delete group:', error);
+      }
+    }
+  }, [editorMode, setSelectedGroup, removeGroup, connectingFromGroupId, startConnectingGroups, cancelConnectingGroups, addGroupConnection]);
+
+  // Handle group drag - also move all nodes in the group
+  const handleGroupDrag = useCallback(async (groupId: string, x: number, y: number) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    
+    // Calculate the delta movement
+    const dx = x - group.positionX;
+    const dy = y - group.positionY;
+    
+    // Update group position
+    updateGroupPosition(groupId, x, y);
+    
+    // Move all nodes that belong to this group
+    const nodesInGroup = nodes.filter(n => n.groupId === groupId);
+    for (const node of nodesInGroup) {
+      const newNodeX = node.positionX + dx;
+      const newNodeY = node.positionY + dy;
+      updateNodePosition(node.id, newNodeX, newNodeY);
+      // Save node position (fire and forget for performance)
+      nodesApi.updatePosition(node.id, newNodeX, newNodeY).catch(console.error);
+    }
+    
+    try {
+      await groupsApi.updatePosition(groupId, { positionX: x, positionY: y });
+    } catch (error) {
+      console.error('Failed to save group position:', error);
+    }
+  }, [updateGroupPosition, updateNodePosition, groups, nodes]);
+
+  // Handle group resize
+  const handleGroupResize = useCallback(async (groupId: string, width: number, height: number) => {
+    updateGroupPosition(groupId, 
+      groups.find(g => g.id === groupId)?.positionX || 0,
+      groups.find(g => g.id === groupId)?.positionY || 0,
+      width,
+      height
+    );
+    
+    try {
+      await groupsApi.updatePosition(groupId, { width, height });
+    } catch (error) {
+      console.error('Failed to save group size:', error);
+    }
+  }, [updateGroupPosition, groups]);
+
+  // Check if a node is inside a group's bounds
+  const findGroupAtPosition = useCallback((x: number, y: number): NodeGroup | null => {
+    const HEADER_HEIGHT = 28;
+    // Check groups in reverse order (topmost first based on zIndex)
+    const sortedGroups = [...groups].sort((a, b) => b.zIndex - a.zIndex);
+    
+    for (const group of sortedGroups) {
+      // Node center (x, y) should be inside the group's content area (below header)
+      const isInsideX = x >= group.positionX && x <= group.positionX + group.width;
+      const isInsideY = y >= group.positionY + HEADER_HEIGHT && y <= group.positionY + group.height;
+      
+      if (isInsideX && isInsideY) {
+        return group;
+      }
+    }
+    return null;
+  }, [groups]);
+
+  // Handle node drag with group assignment
+  const handleNodeDragWithGroup = useCallback(async (node: INetworkNode, x: number, y: number) => {
+    updateNodePosition(node.id, x, y);
+    
+    // Check if node is now inside a group
+    const targetGroup = findGroupAtPosition(x, y);
+    const newGroupId = targetGroup?.id || null;
+    
+    // Get current groupId from the store (node param might be stale)
+    const currentNode = nodes.find(n => n.id === node.id);
+    const currentGroupId = currentNode?.groupId || null;
+    
+    // If group assignment changed, update it
+    if (newGroupId !== currentGroupId) {
+      console.log(`Node "${node.name}" group change: ${currentGroupId} -> ${newGroupId}`);
+      assignNodeToGroup(node.id, newGroupId);
+      
+      try {
+        if (newGroupId) {
+          // Assign to new group
+          await groupsApi.assignNode(newGroupId, node.id);
+        } else if (currentGroupId) {
+          // Unassign from previous group
+          await groupsApi.unassignNode(currentGroupId, node.id);
+        }
+      } catch (error) {
+        console.error('Failed to update group assignment:', error);
+      }
+    }
+    
+    // Save position to API
+    try {
+      await nodesApi.updatePosition(node.id, x, y);
+    } catch (error) {
+      console.error('Failed to save position:', error);
+    }
+  }, [updateNodePosition, findGroupAtPosition, assignNodeToGroup, nodes]);
+
   // Get cursor based on mode
   const getCursor = () => {
     switch (editorMode) {
       case 'add': return 'crosshair';
+      case 'group': return 'crosshair';
       case 'connect': return connectingFromId ? 'pointer' : 'cell';
+      case 'connectGroups': return connectingFromGroupId ? 'pointer' : 'cell';
       case 'delete': return 'not-allowed';
       default: return 'default';
     }
@@ -224,28 +463,74 @@ export function NetworkCanvas() {
         width={dimensions.width}
         height={dimensions.height}
         onClick={handleStageClick}
+        onWheel={handleWheel}
         scaleX={canvas.scale}
         scaleY={canvas.scale}
         x={canvas.offsetX}
         y={canvas.offsetY}
         draggable={editorMode === 'select'}
         onDragEnd={(e) => {
-          const stage = e.target;
-          useNetworkStore.getState().setCanvasOffset(stage.x(), stage.y());
+          // Only update canvas offset if it was actually the Stage that was dragged
+          // (not a node or group whose event bubbled up)
+          const stage = e.target.getStage();
+          if (e.target === stage) {
+            useNetworkStore.getState().setCanvasOffset(stage.x(), stage.y());
+          }
         }}
       >
-        <Layer>
-          {/* Grid background */}
+        {/* Layer 1: Background (non-interactive, optimized) */}
+        <Layer listening={false}>
+          {/* Grid background - virtualized to only render visible lines */}
           <GridBackground 
-            width={dimensions.width * 3} 
-            height={dimensions.height * 3} 
-            offsetX={-dimensions.width}
-            offsetY={-dimensions.height}
+            width={dimensions.width} 
+            height={dimensions.height}
+            canvasScale={canvas.scale}
+            canvasOffsetX={canvas.offsetX}
+            canvasOffsetY={canvas.offsetY}
           />
         </Layer>
 
+        {/* Layer 2: All interactive elements (consolidated for performance) */}
+        {/* Rendering order: Groups -> Group Connections -> Node Connections -> Nodes */}
         <Layer>
-          {/* Connections */}
+          {/* Groups (rendered first, appear behind everything) */}
+          {groups
+            .slice()
+            .sort((a, b) => a.zIndex - b.zIndex)
+            .map((group) => (
+              <GroupZone
+                key={group.id}
+                group={group}
+                isSelected={selectedGroupId === group.id}
+                isConnecting={connectingFromGroupId === group.id}
+                onClick={() => handleGroupClick(group)}
+                onDragEnd={(x, y) => handleGroupDrag(group.id, x, y)}
+                onResize={(w, h) => handleGroupResize(group.id, w, h)}
+                editorMode={editorMode}
+              />
+            ))}
+
+          {/* Group Connections */}
+          {groupConnections.map((connection) => {
+            const sourceGroup = groups.find(g => g.id === connection.sourceGroupId);
+            const targetGroup = groups.find(g => g.id === connection.targetGroupId);
+            
+            if (!sourceGroup || !targetGroup) return null;
+
+            return (
+              <GroupConnectionLine
+                key={connection.id}
+                connection={connection}
+                sourceGroup={sourceGroup}
+                targetGroup={targetGroup}
+                nodes={nodes}
+                onClick={() => handleGroupConnectionClick(connection.id)}
+                isDeleteMode={editorMode === 'delete'}
+              />
+            );
+          })}
+
+          {/* Node Connections */}
           {connections.map((connection) => {
             const sourceNode = nodes.find(n => n.id === connection.sourceNodeId);
             const targetNode = nodes.find(n => n.id === connection.targetNodeId);
@@ -263,18 +548,16 @@ export function NetworkCanvas() {
               />
             );
           })}
-        </Layer>
 
-        <Layer>
-          {/* Nodes */}
+          {/* Nodes (rendered last, appear on top) */}
           {nodes.map((node) => (
             <NetworkNode
               key={node.id}
               node={node}
-              isSelected={useNetworkStore.getState().selectedNodeId === node.id}
+              isSelected={selectedNodeId === node.id}
               isConnecting={connectingFromId === node.id}
               onClick={() => handleNodeClick(node)}
-              onDragEnd={(x, y) => handleNodeDrag(node.id, x, y)}
+              onDragEnd={(x, y) => handleNodeDragWithGroup(node, x, y)}
               editorMode={editorMode}
             />
           ))}
@@ -332,6 +615,14 @@ export function NetworkCanvas() {
       {connectingFromId && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 glass-dark px-4 py-2 rounded-lg text-sm">
           <span className="text-neon-blue">Click another node to connect</span>
+          <span className="text-gray-500 ml-2">or press ESC to cancel</span>
+        </div>
+      )}
+
+      {/* Group Connecting indicator */}
+      {connectingFromGroupId && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 glass-dark px-4 py-2 rounded-lg text-sm">
+          <span className="text-neon-purple">Click another group to connect</span>
           <span className="text-gray-500 ml-2">or press ESC to cancel</span>
         </div>
       )}

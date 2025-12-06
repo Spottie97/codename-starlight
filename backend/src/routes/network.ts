@@ -1,16 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../server';
+import { getCurrentIsp, detectAndSwitchIsp, forceRefreshIsp } from '../services/ispService';
 
 export const networkRouter = Router();
 
 // GET /api/network - Get full network topology
 networkRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const [nodes, connections] = await Promise.all([
+    const [nodes, connections, groups, groupConnections] = await Promise.all([
       prisma.node.findMany({
         orderBy: { createdAt: 'asc' },
       }),
       prisma.connection.findMany({
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.nodeGroup.findMany({
+        orderBy: { zIndex: 'asc' },
+      }),
+      prisma.groupConnection.findMany({
         orderBy: { createdAt: 'asc' },
       }),
     ]);
@@ -20,6 +27,8 @@ networkRouter.get('/', async (req: Request, res: Response) => {
       data: {
         nodes,
         connections,
+        groups,
+        groupConnections,
       },
     });
   } catch (error) {
@@ -79,9 +88,11 @@ networkRouter.post('/layouts', async (req: Request, res: Response) => {
     }
 
     // Get current network topology
-    const [nodes, connections] = await Promise.all([
+    const [nodes, connections, groups, groupConnections] = await Promise.all([
       prisma.node.findMany(),
       prisma.connection.findMany(),
+      prisma.nodeGroup.findMany(),
+      prisma.groupConnection.findMany(),
     ]);
 
     // If this is set as default, unset other defaults
@@ -97,7 +108,7 @@ networkRouter.post('/layouts', async (req: Request, res: Response) => {
         name,
         description,
         isDefault: isDefault || false,
-        layoutData: { nodes, connections },
+        layoutData: { nodes, connections, groups, groupConnections },
       },
     });
 
@@ -120,13 +131,35 @@ networkRouter.post('/layouts/:id/load', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Layout not found' });
     }
 
-    const layoutData = layout.layoutData as { nodes: any[]; connections: any[] };
+    const layoutData = layout.layoutData as { nodes: any[]; connections: any[]; groups?: any[]; groupConnections?: any[] };
 
     // Clear existing network
+    await prisma.groupConnection.deleteMany();
     await prisma.connection.deleteMany();
     await prisma.node.deleteMany();
+    await prisma.nodeGroup.deleteMany();
 
-    // Recreate nodes and connections
+    // Recreate groups first (so nodes can reference them)
+    if (layoutData.groups) {
+      for (const group of layoutData.groups) {
+        await prisma.nodeGroup.create({
+          data: {
+            id: group.id,
+            name: group.name,
+            description: group.description,
+            positionX: group.positionX,
+            positionY: group.positionY,
+            width: group.width,
+            height: group.height,
+            color: group.color,
+            opacity: group.opacity,
+            zIndex: group.zIndex,
+          },
+        });
+      }
+    }
+
+    // Recreate nodes
     for (const node of layoutData.nodes) {
       await prisma.node.create({
         data: {
@@ -136,6 +169,7 @@ networkRouter.post('/layouts/:id/load', async (req: Request, res: Response) => {
           description: node.description,
           positionX: node.positionX,
           positionY: node.positionY,
+          groupId: node.groupId,
           mqttTopic: node.mqttTopic,
           color: node.color,
           icon: node.icon,
@@ -145,6 +179,7 @@ networkRouter.post('/layouts/:id/load', async (req: Request, res: Response) => {
       });
     }
 
+    // Recreate connections
     for (const connection of layoutData.connections) {
       await prisma.connection.create({
         data: {
@@ -153,16 +188,39 @@ networkRouter.post('/layouts/:id/load', async (req: Request, res: Response) => {
           targetNodeId: connection.targetNodeId,
           label: connection.label,
           bandwidth: connection.bandwidth,
+          isActiveSource: connection.isActiveSource || false,
           color: connection.color,
           animated: connection.animated,
         },
       });
     }
 
+    // Recreate group connections
+    if (layoutData.groupConnections) {
+      for (const groupConnection of layoutData.groupConnections) {
+        await prisma.groupConnection.create({
+          data: {
+            id: groupConnection.id,
+            sourceGroupId: groupConnection.sourceGroupId,
+            targetGroupId: groupConnection.targetGroupId,
+            label: groupConnection.label,
+            bandwidth: groupConnection.bandwidth,
+            color: groupConnection.color,
+            animated: groupConnection.animated,
+          },
+        });
+      }
+    }
+
     res.json({ 
       success: true, 
       message: 'Layout loaded successfully',
-      data: { nodes: layoutData.nodes.length, connections: layoutData.connections.length },
+      data: { 
+        nodes: layoutData.nodes.length, 
+        connections: layoutData.connections.length,
+        groups: layoutData.groups?.length || 0,
+        groupConnections: layoutData.groupConnections?.length || 0,
+      },
     });
   } catch (error) {
     console.error('Error loading layout:', error);
@@ -189,6 +247,100 @@ networkRouter.delete('/layouts/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ============================================
+// ISP Detection Endpoints
+// ============================================
 
+// GET /api/network/isp - Get current ISP information
+networkRouter.get('/isp', async (req: Request, res: Response) => {
+  try {
+    const ispInfo = await getCurrentIsp();
+    
+    if (!ispInfo) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Could not detect ISP. Check internet connectivity.' 
+      });
+    }
 
+    // Also get the matched internet node if any
+    const internetNodes = await prisma.node.findMany({
+      where: {
+        type: 'INTERNET',
+        OR: [
+          { ispName: { not: null } },
+          { ispOrganization: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        ispName: true,
+        ispOrganization: true,
+      },
+    });
 
+    // Find matching node
+    const ispLower = ispInfo.isp.toLowerCase();
+    const orgLower = ispInfo.org.toLowerCase();
+    
+    const matchedNode = internetNodes.find(node => {
+      if (node.ispName && (
+        ispLower.includes(node.ispName.toLowerCase()) ||
+        orgLower.includes(node.ispName.toLowerCase())
+      )) return true;
+      if (node.ispOrganization && (
+        ispLower.includes(node.ispOrganization.toLowerCase()) ||
+        orgLower.includes(node.ispOrganization.toLowerCase())
+      )) return true;
+      return false;
+    });
+
+    res.json({ 
+      success: true, 
+      data: {
+        ...ispInfo,
+        matchedNodeId: matchedNode?.id || null,
+        matchedNodeName: matchedNode?.name || null,
+      }
+    });
+  } catch (error) {
+    console.error('Error getting ISP info:', error);
+    res.status(500).json({ success: false, error: 'Failed to get ISP info' });
+  }
+});
+
+// POST /api/network/isp/detect - Force ISP detection and auto-switch
+networkRouter.post('/isp/detect', async (req: Request, res: Response) => {
+  try {
+    // Force refresh the ISP cache first
+    await forceRefreshIsp();
+    
+    // Run detection and auto-switch
+    const result = await detectAndSwitchIsp();
+    
+    if (!result.ispInfo) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Could not detect ISP. Check internet connectivity.' 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      data: {
+        ispInfo: result.ispInfo,
+        matchedNodeId: result.matchedNodeId,
+        switched: result.switched,
+      },
+      message: result.switched 
+        ? `Switched to ${result.ispInfo.isp}` 
+        : result.matchedNodeId 
+          ? `ISP ${result.ispInfo.isp} is already active`
+          : `No matching INTERNET node found for ${result.ispInfo.isp}`
+    });
+  } catch (error) {
+    console.error('Error detecting ISP:', error);
+    res.status(500).json({ success: false, error: 'Failed to detect ISP' });
+  }
+});

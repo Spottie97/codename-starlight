@@ -2,12 +2,15 @@ import {
   MousePointer2, 
   Plus, 
   Link2, 
+  Share2,
   Trash2, 
   ZoomIn, 
   ZoomOut, 
   Maximize2,
   Save,
-  FolderOpen
+  FolderOpen,
+  Square,
+  LayoutGrid
 } from 'lucide-react';
 import { useNetworkStore, selectEditorMode, selectCanvasState } from '../../store/networkStore';
 import { cn } from '../../lib/utils';
@@ -42,12 +45,14 @@ function ToolButton({ icon, label, active, onClick, variant = 'default' }: ToolB
 export function Toolbar() {
   const editorMode = useNetworkStore(selectEditorMode);
   const canvas = useNetworkStore(selectCanvasState);
-  const { setEditorMode, setCanvasScale, resetCanvas } = useNetworkStore();
+  const { setEditorMode, setCanvasScale, resetCanvas, autoArrangeLayout } = useNetworkStore();
 
   const tools: { mode: EditorMode; icon: React.ReactNode; label: string; variant?: 'default' | 'danger' }[] = [
     { mode: 'select', icon: <MousePointer2 size={20} />, label: 'Select (V)' },
     { mode: 'add', icon: <Plus size={20} />, label: 'Add Node (A)' },
+    { mode: 'group', icon: <Square size={20} />, label: 'Add Group Zone (G)' },
     { mode: 'connect', icon: <Link2 size={20} />, label: 'Connect Nodes (C)' },
+    { mode: 'connectGroups', icon: <Share2 size={20} />, label: 'Connect Groups (Shift+C)' },
     { mode: 'delete', icon: <Trash2 size={20} />, label: 'Delete (D)', variant: 'danger' },
   ];
 
@@ -56,7 +61,7 @@ export function Toolbar() {
   const handleResetView = () => resetCanvas();
 
   return (
-    <div className="absolute top-20 left-4 z-40 flex flex-col gap-2">
+    <div className="absolute top-20 left-4 z-40 flex flex-col gap-2 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin">
       {/* Mode Tools */}
       <div className="glass-dark rounded-lg p-1 flex flex-col gap-1">
         {tools.map((tool) => (
@@ -91,6 +96,15 @@ export function Toolbar() {
         <div className="text-center text-xs text-gray-500 py-1">
           {Math.round(canvas.scale * 100)}%
         </div>
+      </div>
+
+      {/* Layout */}
+      <div className="glass-dark rounded-lg p-1 flex flex-col gap-1">
+        <ToolButton
+          icon={<LayoutGrid size={20} />}
+          label="Auto Arrange Layout"
+          onClick={() => autoArrangeLayout()}
+        />
       </div>
 
       {/* Save/Load */}

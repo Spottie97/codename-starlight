@@ -21,6 +21,8 @@ enum NodeType {
   ACCESS_POINT  // Wireless access point
   FIREWALL      // Network firewall
   VIRTUAL       // Virtual/logical grouping node
+  INTERNET      // External internet connection (ISP, WAN link)
+  MAIN_LINK     // Main network entry point / aggregation point
 }
 
 // Monitoring method for each node
@@ -40,12 +42,74 @@ enum Status {
   UNKNOWN
 }
 
+// Node group - visual grouping zone for organizing nodes
+model NodeGroup {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  
+  // Position and size on the canvas
+  positionX   Float    @default(0)
+  positionY   Float    @default(0)
+  width       Float    @default(300)
+  height      Float    @default(200)
+  
+  // Visual customization
+  color       String   @default("#3b82f6")  // Blue default
+  opacity     Float    @default(0.15)
+  
+  // Ordering (lower = rendered first/behind)
+  zIndex      Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  nodes                 Node[]
+  outgoingConnections   GroupConnection[] @relation("SourceGroup")
+  incomingConnections   GroupConnection[] @relation("TargetGroup")
+  
+  @@index([zIndex])
+}
+
+// Connection between groups (represents inter-area/department links)
+model GroupConnection {
+  id             String    @id @default(uuid())
+  
+  sourceGroupId  String
+  targetGroupId  String
+  
+  sourceGroup    NodeGroup @relation("SourceGroup", fields: [sourceGroupId], references: [id], onDelete: Cascade)
+  targetGroup    NodeGroup @relation("TargetGroup", fields: [targetGroupId], references: [id], onDelete: Cascade)
+  
+  // Connection metadata
+  label          String?
+  bandwidth      String?   // e.g., "10Gbps", "1Gbps"
+  
+  // Visual properties
+  color          String    @default("#6B7280")
+  animated       Boolean   @default(true)
+  
+  // Timestamps
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@unique([sourceGroupId, targetGroupId])
+  @@index([sourceGroupId])
+  @@index([targetGroupId])
+}
+
 // Network node - represents a device or location in the network
 model Node {
   id          String   @id @default(uuid())
   name        String
   type        NodeType @default(PROBE)
   description String?
+  
+  // Group assignment
+  groupId     String?
+  group       NodeGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   
   // Position on the canvas
   positionX   Float    @default(0)
@@ -77,6 +141,11 @@ model Node {
   // Internet connectivity (separate from local network)
   internetStatus    Status   @default(UNKNOWN)
   internetLastCheck DateTime?
+  checkInternetAccess Boolean @default(false)  // Enable internet access checking for this node
+  
+  // ISP configuration (for INTERNET type nodes)
+  ispName           String?   // Expected ISP name to match (e.g., "Comcast", "AT&T")
+  ispOrganization   String?   // Alternative organization name to match
   
   // Visual customization
   color       String   @default("#4F46E5")
@@ -95,6 +164,7 @@ model Node {
   @@index([mqttTopic])
   @@index([monitoringMethod])
   @@index([ipAddress])
+  @@index([groupId])
 }
 
 // Connection between nodes
@@ -110,6 +180,9 @@ model Connection {
   // Connection metadata
   label        String?
   bandwidth    String?  // e.g., "1Gbps", "100Mbps"
+  
+  // Internet source tracking (for connections from INTERNET nodes)
+  isActiveSource  Boolean  @default(false)  // Is this the active internet source?
   
   // Visual properties
   color        String   @default("#6B7280")

@@ -11,7 +11,9 @@ import {
   Box,
   Wifi,
   Shield,
-  Activity
+  Activity,
+  Cloud,
+  Network
 } from 'lucide-react';
 import { useNetworkStore, selectSelectedNode } from '../../store/networkStore';
 import { nodesApi } from '../../services/api';
@@ -33,6 +35,8 @@ const NODE_TYPE_OPTIONS: { value: NodeType; label: string; icon: React.ReactNode
   { value: 'ACCESS_POINT', label: 'Access Point', icon: <Wifi size={16} /> },
   { value: 'FIREWALL', label: 'Firewall', icon: <Shield size={16} /> },
   { value: 'VIRTUAL', label: 'Virtual', icon: <Box size={16} /> },
+  { value: 'INTERNET', label: 'Internet (WAN)', icon: <Cloud size={16} /> },
+  { value: 'MAIN_LINK', label: 'Main Link', icon: <Network size={16} /> },
 ];
 
 const MONITORING_METHOD_OPTIONS: { value: MonitoringMethod; label: string }[] = [
@@ -61,6 +65,11 @@ interface FormData {
   snmpVersion: '1' | '2c' | '3';
   httpEndpoint: string;
   httpExpectedCode: number;
+  // ISP configuration (for INTERNET nodes)
+  ispName: string;
+  ispOrganization: string;
+  // Internet access checking
+  checkInternetAccess: boolean;
 }
 
 export function NodeEditor() {
@@ -80,6 +89,9 @@ export function NodeEditor() {
     snmpVersion: '2c',
     httpEndpoint: '',
     httpExpectedCode: 200,
+    ispName: '',
+    ispOrganization: '',
+    checkInternetAccess: false,
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -99,6 +111,9 @@ export function NodeEditor() {
         snmpVersion: (selectedNode.snmpVersion as '1' | '2c' | '3') || '2c',
         httpEndpoint: selectedNode.httpEndpoint || '',
         httpExpectedCode: selectedNode.httpExpectedCode || 200,
+        ispName: selectedNode.ispName || '',
+        ispOrganization: selectedNode.ispOrganization || '',
+        checkInternetAccess: selectedNode.checkInternetAccess || false,
       });
     }
   }, [selectedNode]);
@@ -133,6 +148,11 @@ export function NodeEditor() {
         snmpVersion: formData.snmpVersion,
         httpEndpoint: formData.httpEndpoint || null,
         httpExpectedCode: formData.httpExpectedCode,
+        // ISP configuration (only relevant for INTERNET nodes)
+        ispName: formData.ispName || null,
+        ispOrganization: formData.ispOrganization || null,
+        // Internet access checking
+        checkInternetAccess: formData.checkInternetAccess,
       };
 
       console.log('Saving node updates:', updates);
@@ -173,9 +193,12 @@ export function NodeEditor() {
   const showSnmpConfig = formData.monitoringMethod === 'SNMP';
   const showHttpConfig = formData.monitoringMethod === 'HTTP';
   const showPingInterval = ['PING', 'SNMP', 'HTTP'].includes(formData.monitoringMethod);
+  
+  // Show ISP config for INTERNET nodes
+  const showIspConfig = formData.type === 'INTERNET';
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-[700px] max-w-[calc(100vw-2rem)]">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-[700px] px-4 md:px-0">
       <div className="glass-dark rounded-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-dark-500">
@@ -231,7 +254,7 @@ export function NodeEditor() {
         {/* Form */}
         <div className="p-4 space-y-4">
           {/* Basic Info Row */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Name */}
             <div>
               <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
@@ -300,7 +323,7 @@ export function NodeEditor() {
               Monitoring Configuration
             </h4>
             
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Monitoring Method */}
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
@@ -432,6 +455,75 @@ export function NodeEditor() {
               )}
             </div>
           </div>
+
+          {/* Internet Access Checking */}
+          {formData.monitoringMethod !== 'NONE' && formData.type !== 'INTERNET' && (
+            <div className="border-t border-dark-500 pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe size={14} className="text-sky-400" />
+                  <span className="text-sm font-semibold text-white">Check Internet Access</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.checkInternetAccess}
+                    onChange={(e) => setFormData({ ...formData, checkInternetAccess: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-dark-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-neon-green/50"></div>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                When enabled, pings external DNS (8.8.8.8, 1.1.1.1) to verify this node has internet connectivity.
+                This sets the node's internet status independently from its local network status.
+              </p>
+            </div>
+          )}
+
+          {/* ISP Configuration (for INTERNET nodes) */}
+          {showIspConfig && (
+            <div className="border-t border-dark-500 pt-4">
+              <h4 className="text-sm font-semibold text-sky-400 mb-3 flex items-center gap-2">
+                <Cloud size={14} />
+                ISP Configuration
+              </h4>
+              <p className="text-xs text-gray-500 mb-3">
+                Configure the ISP name to automatically detect when this internet connection is active.
+                The system will match against your current ISP from your public IP.
+              </p>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {/* ISP Name */}
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
+                    ISP Name (e.g., "Comcast", "AT&T")
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.ispName}
+                    onChange={(e) => setFormData({ ...formData, ispName: e.target.value })}
+                    className="input-cyber"
+                    placeholder="Enter ISP name to match"
+                  />
+                </div>
+
+                {/* ISP Organization (alternative) */}
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
+                    Organization (alternative)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.ispOrganization}
+                    onChange={(e) => setFormData({ ...formData, ispOrganization: e.target.value })}
+                    className="input-cyber"
+                    placeholder="Alternative org name"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div>

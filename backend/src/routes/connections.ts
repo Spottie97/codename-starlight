@@ -188,6 +188,117 @@ connectionsRouter.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH /api/connections/:id/set-active - Set connection as active internet source
+// This will deactivate other connections to the same target node
+connectionsRouter.patch('/:id/set-active', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Get the connection to find its target node
+    const connection = await prisma.connection.findUnique({
+      where: { id },
+      include: {
+        sourceNode: {
+          select: { id: true, name: true, type: true },
+        },
+        targetNode: {
+          select: { id: true, name: true, type: true },
+        },
+      },
+    });
+
+    if (!connection) {
+      return res.status(404).json({ success: false, error: 'Connection not found' });
+    }
+
+    // Verify the source is an INTERNET node
+    if (connection.sourceNode.type !== 'INTERNET') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Only connections from INTERNET nodes can be set as active source' 
+      });
+    }
+
+    // Deactivate all other connections to the same target from INTERNET nodes
+    await prisma.connection.updateMany({
+      where: {
+        targetNodeId: connection.targetNodeId,
+        sourceNode: {
+          type: 'INTERNET',
+        },
+        NOT: {
+          id: id,
+        },
+      },
+      data: {
+        isActiveSource: false,
+      },
+    });
+
+    // Activate this connection
+    const updatedConnection = await prisma.connection.update({
+      where: { id },
+      data: { isActiveSource: true },
+      include: {
+        sourceNode: {
+          select: { id: true, name: true, status: true, type: true },
+        },
+        targetNode: {
+          select: { id: true, name: true, status: true, type: true },
+        },
+      },
+    });
+
+    // Broadcast the update
+    broadcastMessage({
+      type: 'CONNECTION_ACTIVE_SOURCE_CHANGED',
+      payload: {
+        connectionId: id,
+        targetNodeId: connection.targetNodeId,
+        isActiveSource: true,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({ 
+      success: true, 
+      data: updatedConnection,
+      message: `${connection.sourceNode.name} is now the active internet source for ${connection.targetNode.name}` 
+    });
+  } catch (error: any) {
+    console.error('Error setting active source:', error);
+    res.status(500).json({ success: false, error: 'Failed to set active source' });
+  }
+});
+
+// GET /api/connections/active-sources - Get all active internet source connections
+connectionsRouter.get('/internet/active-sources', async (req: Request, res: Response) => {
+  try {
+    const activeSources = await prisma.connection.findMany({
+      where: {
+        isActiveSource: true,
+        sourceNode: {
+          type: 'INTERNET',
+        },
+      },
+      include: {
+        sourceNode: {
+          select: { id: true, name: true, status: true, internetStatus: true },
+        },
+        targetNode: {
+          select: { id: true, name: true, status: true, type: true },
+        },
+      },
+    });
+
+    res.json({ success: true, data: activeSources });
+  } catch (error) {
+    console.error('Error fetching active sources:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch active sources' });
+  }
+});
+
+
 
 
 

@@ -8,6 +8,8 @@ import { nodesRouter } from './routes/nodes';
 import { connectionsRouter } from './routes/connections';
 import { probesRouter } from './routes/probes';
 import { networkRouter } from './routes/network';
+import { groupsRouter } from './routes/groups';
+import { groupConnectionsRouter } from './routes/groupConnections';
 import { initWebSocketServer } from './services/websocketService';
 import { initMqttService } from './services/mqttService';
 import { startMonitoringScheduler, stopMonitoringScheduler } from './services/monitoringService';
@@ -43,6 +45,8 @@ app.use('/api/nodes', nodesRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api/probes', probesRouter);
 app.use('/api/network', networkRouter);
+app.use('/api/groups', groupsRouter);
+app.use('/api/group-connections', groupConnectionsRouter);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

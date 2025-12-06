@@ -48,6 +48,20 @@ body {
   background: #05d9e8;
 }
 
+/* Thin scrollbar for compact areas */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #32324a;
+  border-radius: 2px;
+}
+
 /* Custom utility classes */
 @layer utilities {
   .text-glow {
@@ -191,6 +205,7 @@ body {
 .status-unknown {
   @apply bg-gray-500/20 text-gray-400 border border-gray-500/30;
 }
+
 
 
 

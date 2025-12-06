@@ -1,8 +1,9 @@
-import { useRef, useEffect, useState } from 'react';
-import { Group, Circle, Text, Ring, Rect } from 'react-konva';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { Group, Circle, Text, Ring, Rect, RegularPolygon, Line } from 'react-konva';
 import Konva from 'konva';
 import type { NetworkNode as INetworkNode, EditorMode, NodeType, MonitoringMethod } from '../../types/network';
 import { STATUS_COLORS, NODE_TYPE_LABELS } from '../../types/network';
+import { useGlobalAnimation, calculatePulse } from '../../hooks/useGlobalAnimation';
 
 // Monitoring method badge colors
 const MONITORING_METHOD_COLORS: Record<MonitoringMethod, string> = {
@@ -22,6 +23,10 @@ const MONITORING_METHOD_SHORT: Record<MonitoringMethod, string> = {
   NONE: '-',
 };
 
+// Special node type colors
+const INTERNET_COLOR = '#00bfff';  // Deep sky blue
+const MAIN_LINK_COLOR = '#ffd700'; // Gold
+
 interface NetworkNodeProps {
   node: INetworkNode;
   isSelected: boolean;
@@ -40,34 +45,29 @@ export function NetworkNode({
   editorMode,
 }: NetworkNodeProps) {
   const groupRef = useRef<Konva.Group>(null);
-  const pulseRef = useRef<Konva.Ring>(null);
   const [isHovered, setIsHovered] = useState(false);
 
-  const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.UNKNOWN;
-  const nodeRadius = 30;
+  const isInternetNode = node.type === 'INTERNET';
+  const isMainLinkNode = node.type === 'MAIN_LINK';
+  const isSpecialNode = isInternetNode || isMainLinkNode;
 
-  // Pulse animation for status
-  useEffect(() => {
-    if (!pulseRef.current) return;
+  // For INTERNET nodes, use internetStatus as primary status
+  const primaryStatus = isInternetNode ? node.internetStatus : node.status;
+  const statusColor = STATUS_COLORS[primaryStatus] || STATUS_COLORS.UNKNOWN;
+  
+  // Special nodes are larger
+  const nodeRadius = isSpecialNode ? 40 : 30;
 
-    const anim = new Konva.Animation((frame) => {
-      if (!frame || !pulseRef.current) return;
-      
-      const period = 2000; // 2 seconds
-      const scale = 1 + 0.3 * Math.sin((frame.time * 2 * Math.PI) / period);
-      const opacity = 0.6 - 0.4 * Math.sin((frame.time * 2 * Math.PI) / period);
-      
-      pulseRef.current.scaleX(scale);
-      pulseRef.current.scaleY(scale);
-      pulseRef.current.opacity(opacity);
-    }, pulseRef.current.getLayer());
-
-    if (node.status === 'ONLINE' || node.status === 'OFFLINE' || node.status === 'DEGRADED') {
-      anim.start();
-    }
-
-    return () => anim.stop();
-  }, [node.status]);
+  // Use global animation for pulse effect (shared across all nodes - much more efficient)
+  const animationTime = useGlobalAnimation(30); // 30 FPS is sufficient for pulse effect
+  const pulsePeriod = isInternetNode ? 1500 : 2000;
+  const shouldAnimate = primaryStatus === 'ONLINE' || primaryStatus === 'OFFLINE' || primaryStatus === 'DEGRADED';
+  
+  // Calculate pulse values from global time (no individual animation loops)
+  const pulse = useMemo(() => {
+    if (!shouldAnimate) return { scale: 1, opacity: 0.4 };
+    return calculatePulse(animationTime, pulsePeriod);
+  }, [animationTime, pulsePeriod, shouldAnimate]);
 
   // Hover effect
   useEffect(() => {
@@ -90,6 +90,8 @@ export function NetworkNode({
   }, [isHovered, isSelected]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    // Stop propagation to prevent the Stage from thinking it was dragged
+    e.cancelBubble = true;
     const newX = e.target.x();
     const newY = e.target.y();
     onDragEnd(newX, newY);
@@ -97,15 +99,292 @@ export function NetworkNode({
 
   const isDraggable = editorMode === 'select';
 
+  // Render INTERNET node (cloud-like shape)
+  if (isInternetNode) {
+    return (
+      <Group
+        ref={groupRef}
+        x={node.positionX}
+        y={node.positionY}
+        draggable={isDraggable}
+        onDragStart={(e) => { e.cancelBubble = true; }}
+        onDragMove={(e) => { e.cancelBubble = true; }}
+        onDragEnd={handleDragEnd}
+        onClick={(e) => { e.cancelBubble = true; onClick(); }}
+        onTap={(e) => { e.cancelBubble = true; onClick(); }}
+        onMouseEnter={() => {
+          setIsHovered(true);
+          document.body.style.cursor = editorMode === 'delete' ? 'not-allowed' : 'pointer';
+        }}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          document.body.style.cursor = 'default';
+        }}
+      >
+        {/* Status pulse ring - uses global animation */}
+        <Ring
+          innerRadius={nodeRadius}
+          outerRadius={nodeRadius + 12}
+          fill={statusColor}
+          opacity={pulse.opacity}
+          scaleX={pulse.scale}
+          scaleY={pulse.scale}
+        />
+
+        {/* Selection ring */}
+        {(isSelected || isConnecting) && (
+          <Ring
+            innerRadius={nodeRadius + 6}
+            outerRadius={nodeRadius + 14}
+            fill="transparent"
+            stroke={isConnecting ? '#fffc00' : '#05d9e8'}
+            strokeWidth={3}
+            dash={[8, 4]}
+          />
+        )}
+
+        {/* Cloud shape - outer ring */}
+        <Circle
+          radius={nodeRadius}
+          fill="#12121a"
+          stroke={INTERNET_COLOR}
+          strokeWidth={4}
+          shadowColor={INTERNET_COLOR}
+          shadowBlur={isHovered ? 30 : 20}
+          shadowOpacity={0.9}
+        />
+
+        {/* Cloud inner decoration - three overlapping circles */}
+        <Circle x={-12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
+        <Circle x={12} y={5} radius={12} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
+        <Circle x={0} y={-8} radius={14} fill="transparent" stroke={INTERNET_COLOR} strokeWidth={2} opacity={0.4} />
+
+        {/* Center status indicator - larger for internet nodes */}
+        <Circle
+          radius={12}
+          fill={statusColor}
+          shadowColor={statusColor}
+          shadowBlur={20}
+          shadowOpacity={1}
+        />
+
+        {/* "WAN" label inside */}
+        <Text
+          text="WAN"
+          fontSize={10}
+          fontFamily="Orbitron"
+          fontStyle="bold"
+          fill="#12121a"
+          align="center"
+          width={30}
+          offsetX={15}
+          offsetY={5}
+        />
+
+        {/* Node name */}
+        <Text
+          text={node.name}
+          fontSize={14}
+          fontFamily="Rajdhani"
+          fontStyle="700"
+          fill="#ffffff"
+          y={nodeRadius + 12}
+          align="center"
+          width={120}
+          offsetX={60}
+        />
+
+        {/* Status label */}
+        <Text
+          text={primaryStatus === 'ONLINE' ? '● CONNECTED' : primaryStatus === 'OFFLINE' ? '● DISCONNECTED' : '● CHECKING...'}
+          fontSize={10}
+          fontFamily="Orbitron"
+          fill={statusColor}
+          y={nodeRadius + 28}
+          align="center"
+          width={120}
+          offsetX={60}
+        />
+
+        {/* Latency display */}
+        {node.latency !== null && (
+          <Text
+            text={`${node.latency}ms`}
+            fontSize={11}
+            fontFamily="Orbitron"
+            fill={node.latency < 50 ? '#39ff14' : node.latency < 100 ? '#fffc00' : '#ff2a6d'}
+            y={-nodeRadius - 22}
+            align="center"
+            width={60}
+            offsetX={30}
+          />
+        )}
+      </Group>
+    );
+  }
+
+  // Render MAIN_LINK node (diamond/hexagon shape with gold accent)
+  if (isMainLinkNode) {
+    return (
+      <Group
+        ref={groupRef}
+        x={node.positionX}
+        y={node.positionY}
+        draggable={isDraggable}
+        onDragStart={(e) => { e.cancelBubble = true; }}
+        onDragMove={(e) => { e.cancelBubble = true; }}
+        onDragEnd={handleDragEnd}
+        onClick={(e) => { e.cancelBubble = true; onClick(); }}
+        onTap={(e) => { e.cancelBubble = true; onClick(); }}
+        onMouseEnter={() => {
+          setIsHovered(true);
+          document.body.style.cursor = editorMode === 'delete' ? 'not-allowed' : 'pointer';
+        }}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          document.body.style.cursor = 'default';
+        }}
+      >
+        {/* Status pulse ring - uses global animation */}
+        <Ring
+          innerRadius={nodeRadius}
+          outerRadius={nodeRadius + 12}
+          fill={statusColor}
+          opacity={pulse.opacity}
+          scaleX={pulse.scale}
+          scaleY={pulse.scale}
+        />
+
+        {/* Selection ring */}
+        {(isSelected || isConnecting) && (
+          <RegularPolygon
+            sides={6}
+            radius={nodeRadius + 14}
+            fill="transparent"
+            stroke={isConnecting ? '#fffc00' : '#05d9e8'}
+            strokeWidth={3}
+            dash={[8, 4]}
+            rotation={30}
+          />
+        )}
+
+        {/* Hexagon shape - outer */}
+        <RegularPolygon
+          sides={6}
+          radius={nodeRadius}
+          fill="#12121a"
+          stroke={MAIN_LINK_COLOR}
+          strokeWidth={4}
+          shadowColor={MAIN_LINK_COLOR}
+          shadowBlur={isHovered ? 30 : 20}
+          shadowOpacity={0.9}
+          rotation={30}
+        />
+
+        {/* Inner hexagon decoration */}
+        <RegularPolygon
+          sides={6}
+          radius={nodeRadius - 10}
+          fill="transparent"
+          stroke={MAIN_LINK_COLOR}
+          strokeWidth={2}
+          opacity={0.5}
+          rotation={30}
+        />
+
+        {/* Network lines inside - representing connections */}
+        <Line points={[-15, 0, 15, 0]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} />
+        <Line points={[0, -15, 0, 15]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.6} />
+        <Line points={[-10, -10, 10, 10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} />
+        <Line points={[-10, 10, 10, -10]} stroke={MAIN_LINK_COLOR} strokeWidth={2} opacity={0.4} />
+
+        {/* Center status indicator */}
+        <Circle
+          radius={10}
+          fill={statusColor}
+          shadowColor={statusColor}
+          shadowBlur={18}
+          shadowOpacity={1}
+        />
+
+        {/* Internet status indicator - prominent for main link */}
+        <Circle
+          x={nodeRadius - 8}
+          y={-nodeRadius + 8}
+          radius={8}
+          fill={STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN}
+          stroke="#12121a"
+          strokeWidth={2}
+          shadowColor={STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN}
+          shadowBlur={8}
+        />
+
+        {/* Node name */}
+        <Text
+          text={node.name}
+          fontSize={14}
+          fontFamily="Rajdhani"
+          fontStyle="700"
+          fill="#ffffff"
+          y={nodeRadius + 12}
+          align="center"
+          width={120}
+          offsetX={60}
+        />
+
+        {/* Node type label */}
+        <Text
+          text="MAIN ENTRY"
+          fontSize={10}
+          fontFamily="Orbitron"
+          fill={MAIN_LINK_COLOR}
+          y={nodeRadius + 28}
+          align="center"
+          width={120}
+          offsetX={60}
+        />
+
+        {/* Latency display */}
+        {node.latency !== null && (
+          <Text
+            text={`${node.latency}ms`}
+            fontSize={11}
+            fontFamily="Orbitron"
+            fill={node.latency < 50 ? '#39ff14' : node.latency < 100 ? '#fffc00' : '#ff2a6d'}
+            y={-nodeRadius - 22}
+            align="center"
+            width={60}
+            offsetX={30}
+          />
+        )}
+      </Group>
+    );
+  }
+
+  // Default node rendering (original)
   return (
     <Group
       ref={groupRef}
       x={node.positionX}
       y={node.positionY}
       draggable={isDraggable}
+      onDragStart={(e) => {
+        // Stop propagation to prevent Stage drag
+        e.cancelBubble = true;
+      }}
+      onDragMove={(e) => {
+        // Stop propagation to prevent Stage drag
+        e.cancelBubble = true;
+      }}
       onDragEnd={handleDragEnd}
-      onClick={onClick}
-      onTap={onClick}
+      onClick={(e) => {
+        e.cancelBubble = true;
+        onClick();
+      }}
+      onTap={(e) => {
+        e.cancelBubble = true;
+        onClick();
+      }}
       onMouseEnter={() => {
         setIsHovered(true);
         document.body.style.cursor = editorMode === 'delete' ? 'not-allowed' : 'pointer';
@@ -115,13 +394,14 @@ export function NetworkNode({
         document.body.style.cursor = 'default';
       }}
     >
-      {/* Status pulse ring */}
+      {/* Status pulse ring - uses global animation */}
       <Ring
-        ref={pulseRef}
         innerRadius={nodeRadius}
         outerRadius={nodeRadius + 8}
         fill={statusColor}
-        opacity={0.3}
+        opacity={pulse.opacity * 0.75}
+        scaleX={pulse.scale}
+        scaleY={pulse.scale}
       />
 
       {/* Selection ring */}

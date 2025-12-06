@@ -3,10 +3,16 @@ import type {
   NetworkTopology,
   NetworkNode,
   Connection,
+  NodeGroup,
+  GroupConnection,
   CreateNodeDTO,
   UpdateNodeDTO,
   CreateConnectionDTO,
   UpdateConnectionDTO,
+  CreateGroupDTO,
+  UpdateGroupDTO,
+  CreateGroupConnectionDTO,
+  UpdateGroupConnectionDTO,
   ProbeStatusSummary,
   NetworkLayout,
 } from '../types/network';
@@ -93,6 +99,42 @@ export const networkApi = {
    */
   deleteLayout: (layoutId: string) =>
     fetchApi<void>(`/api/network/layouts/${layoutId}`, { method: 'DELETE' }),
+
+  /**
+   * Get current ISP information
+   */
+  getCurrentIsp: () =>
+    fetchApi<{
+      publicIp: string;
+      isp: string;
+      org: string;
+      as: string;
+      city: string;
+      region: string;
+      country: string;
+      timezone: string;
+      matchedNodeId: string | null;
+      matchedNodeName: string | null;
+    }>('/api/network/isp'),
+
+  /**
+   * Force ISP detection and auto-switch active source
+   */
+  detectIsp: () =>
+    fetchApi<{
+      ispInfo: {
+        publicIp: string;
+        isp: string;
+        org: string;
+        as: string;
+        city: string;
+        region: string;
+        country: string;
+        timezone: string;
+      };
+      matchedNodeId: string | null;
+      switched: boolean;
+    }>('/api/network/isp/detect', { method: 'POST' }),
 };
 
 // ============================================
@@ -177,6 +219,123 @@ export const connectionsApi = {
    */
   delete: (id: string) =>
     fetchApi<void>(`/api/connections/${id}`, { method: 'DELETE' }),
+
+  /**
+   * Set connection as active internet source
+   * This will deactivate other connections from INTERNET nodes to the same target
+   */
+  setActiveSource: (id: string) =>
+    fetchApi<Connection>(`/api/connections/${id}/set-active`, {
+      method: 'PATCH',
+    }),
+
+  /**
+   * Get all active internet source connections
+   */
+  getActiveSources: () =>
+    fetchApi<Connection[]>('/api/connections/internet/active-sources'),
+};
+
+// ============================================
+// Groups API
+// ============================================
+
+export const groupsApi = {
+  /**
+   * Get all groups
+   */
+  getAll: () => fetchApi<NodeGroup[]>('/api/groups'),
+
+  /**
+   * Get single group with its nodes
+   */
+  getById: (id: string) => fetchApi<NodeGroup & { nodes: NetworkNode[] }>(`/api/groups/${id}`),
+
+  /**
+   * Create new group
+   */
+  create: (data: CreateGroupDTO) =>
+    fetchApi<NodeGroup>('/api/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Update group
+   */
+  update: (id: string, data: UpdateGroupDTO) =>
+    fetchApi<NodeGroup>(`/api/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Update group position and/or size
+   */
+  updatePosition: (id: string, position: { positionX?: number; positionY?: number; width?: number; height?: number }) =>
+    fetchApi<NodeGroup>(`/api/groups/${id}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify(position),
+    }),
+
+  /**
+   * Assign a node to a group
+   */
+  assignNode: (groupId: string, nodeId: string) =>
+    fetchApi<NetworkNode>(`/api/groups/${groupId}/assign-node`, {
+      method: 'POST',
+      body: JSON.stringify({ nodeId }),
+    }),
+
+  /**
+   * Remove a node from a group
+   */
+  unassignNode: (groupId: string, nodeId: string) =>
+    fetchApi<NetworkNode>(`/api/groups/${groupId}/unassign-node`, {
+      method: 'POST',
+      body: JSON.stringify({ nodeId }),
+    }),
+
+  /**
+   * Delete group (nodes remain, just unassigned)
+   */
+  delete: (id: string) =>
+    fetchApi<void>(`/api/groups/${id}`, { method: 'DELETE' }),
+};
+
+// ============================================
+// Group Connections API
+// ============================================
+
+export const groupConnectionsApi = {
+  /**
+   * Get all group connections
+   */
+  getAll: () => fetchApi<GroupConnection[]>('/api/group-connections'),
+
+  /**
+   * Create group connection
+   */
+  create: (data: CreateGroupConnectionDTO) =>
+    fetchApi<GroupConnection>('/api/group-connections', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Update group connection
+   */
+  update: (id: string, data: UpdateGroupConnectionDTO) =>
+    fetchApi<GroupConnection>(`/api/group-connections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Delete group connection
+   */
+  delete: (id: string) =>
+    fetchApi<void>(`/api/group-connections/${id}`, { method: 'DELETE' }),
 };
 
 // ============================================

@@ -12,7 +12,9 @@ export const NodeTypeEnum = z.enum([
   'GATEWAY',
   'ACCESS_POINT',
   'FIREWALL',
-  'VIRTUAL'
+  'VIRTUAL',
+  'INTERNET',
+  'MAIN_LINK'
 ]);
 
 export const StatusEnum = z.enum([
@@ -83,6 +85,9 @@ export const UpdateNodeSchema = z.object({
   positionX: z.number().optional(),
   positionY: z.number().optional(),
   
+  // Group assignment
+  groupId: z.string().uuid().optional().nullable(),
+  
   // Monitoring configuration
   monitoringMethod: MonitoringMethodEnum.optional(),
   ipAddress: ipOrHostname.optional().nullable(),
@@ -102,6 +107,13 @@ export const UpdateNodeSchema = z.object({
   // Visual customization
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   icon: z.string().optional().nullable(),
+  
+  // ISP configuration (for INTERNET nodes)
+  ispName: z.string().optional().nullable(),
+  ispOrganization: z.string().optional().nullable(),
+  
+  // Internet access checking
+  checkInternetAccess: z.boolean().optional(),
   
   // Status (can be manually set)
   status: StatusEnum.optional(),
@@ -135,6 +147,60 @@ export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;
 export type UpdateConnectionInput = z.infer<typeof UpdateConnectionSchema>;
 
 // ============================================
+// Node Group Schemas
+// ============================================
+
+export const CreateGroupSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().optional(),
+  positionX: z.number().optional().default(0),
+  positionY: z.number().optional().default(0),
+  width: z.number().min(100).max(5000).optional().default(300),
+  height: z.number().min(80).max(5000).optional().default(200),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().default('#3b82f6'),
+  opacity: z.number().min(0.05).max(1).optional().default(0.15),
+  zIndex: z.number().optional().default(0),
+});
+
+export const UpdateGroupSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().optional().nullable(),
+  positionX: z.number().optional(),
+  positionY: z.number().optional(),
+  width: z.number().min(100).max(5000).optional(),
+  height: z.number().min(80).max(5000).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  opacity: z.number().min(0.05).max(1).optional(),
+  zIndex: z.number().optional(),
+});
+
+export type CreateGroupInput = z.infer<typeof CreateGroupSchema>;
+export type UpdateGroupInput = z.infer<typeof UpdateGroupSchema>;
+
+// ============================================
+// Group Connection Schemas
+// ============================================
+
+export const CreateGroupConnectionSchema = z.object({
+  sourceGroupId: z.string().uuid(),
+  targetGroupId: z.string().uuid(),
+  label: z.string().optional(),
+  bandwidth: z.string().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().default('#6B7280'),
+  animated: z.boolean().optional().default(true),
+});
+
+export const UpdateGroupConnectionSchema = z.object({
+  label: z.string().optional().nullable(),
+  bandwidth: z.string().optional().nullable(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  animated: z.boolean().optional(),
+});
+
+export type CreateGroupConnectionInput = z.infer<typeof CreateGroupConnectionSchema>;
+export type UpdateGroupConnectionInput = z.infer<typeof UpdateGroupConnectionSchema>;
+
+// ============================================
 // Probe Status Schemas
 // ============================================
 
@@ -154,18 +220,27 @@ export type ProbeStatusMessage = z.infer<typeof ProbeStatusMessageSchema>;
 // ============================================
 
 export interface WSMessage {
-  type: 'NODE_STATUS_UPDATE' | 'NODE_CREATED' | 'NODE_UPDATED' | 'NODE_DELETED' |
-        'CONNECTION_CREATED' | 'CONNECTION_DELETED' | 'NETWORK_UPDATE' | 'PING';
+  type: 'NODE_STATUS_UPDATE' | 'BATCH_STATUS_UPDATE' | 'NODE_CREATED' | 'NODE_UPDATED' | 'NODE_DELETED' |
+        'CONNECTION_CREATED' | 'CONNECTION_DELETED' | 'CONNECTION_ACTIVE_SOURCE_CHANGED' |
+        'GROUP_CREATED' | 'GROUP_UPDATED' | 'GROUP_DELETED' |
+        'GROUP_CONNECTION_CREATED' | 'GROUP_CONNECTION_DELETED' |
+        'NODE_GROUP_CHANGED' | 'NETWORK_UPDATE' | 'ISP_DETECTED' | 'PING';
   payload: unknown;
   timestamp: string;
 }
 
 export interface NodeStatusUpdatePayload {
   nodeId: string;
-  status: Status;
+  status?: Status;
   internetStatus?: Status;
-  latency?: number;
-  lastSeen: string;
+  latency?: number | null;
+  lastSeen?: string;
+  internetLastCheck?: string;
+}
+
+// Batched status updates - more efficient for monitoring cycles
+export interface BatchStatusUpdatePayload {
+  updates: NodeStatusUpdatePayload[];
 }
 
 // ============================================
@@ -182,6 +257,23 @@ export interface ApiResponse<T> {
 export interface NetworkTopology {
   nodes: NodeWithConnections[];
   connections: ConnectionWithNodes[];
+  groups: NodeGroupData[];
+  groupConnections: GroupConnectionWithGroups[];
+}
+
+export interface NodeGroupData {
+  id: string;
+  name: string;
+  description: string | null;
+  positionX: number;
+  positionY: number;
+  width: number;
+  height: number;
+  color: string;
+  opacity: number;
+  zIndex: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface NodeWithConnections {
@@ -191,6 +283,9 @@ export interface NodeWithConnections {
   description: string | null;
   positionX: number;
   positionY: number;
+  
+  // Group assignment
+  groupId: string | null;
   
   // Monitoring configuration
   monitoringMethod: MonitoringMethod;
@@ -209,6 +304,13 @@ export interface NodeWithConnections {
   internetStatus: Status;
   internetLastCheck: Date | null;
   
+  // ISP configuration (for INTERNET nodes)
+  ispName: string | null;
+  ispOrganization: string | null;
+  
+  // Internet access checking
+  checkInternetAccess: boolean;
+  
   // Visual
   color: string;
   icon: string | null;
@@ -221,6 +323,19 @@ export interface ConnectionWithNodes {
   id: string;
   sourceNodeId: string;
   targetNodeId: string;
+  label: string | null;
+  bandwidth: string | null;
+  isActiveSource: boolean;
+  color: string;
+  animated: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface GroupConnectionWithGroups {
+  id: string;
+  sourceGroupId: string;
+  targetGroupId: string;
   label: string | null;
   bandwidth: string | null;
   color: string;

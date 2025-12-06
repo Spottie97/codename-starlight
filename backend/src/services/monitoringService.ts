@@ -5,13 +5,18 @@
 
 import { prisma } from '../server';
 import { broadcastMessage } from './websocketService';
-import { pingWithRetry } from './pingService';
+import { pingWithRetry, pingHost } from './pingService';
 import { snmpQueryWithRetry } from './snmpService';
 import { httpCheckWithRetry, buildHealthCheckUrl } from './httpService';
+import { detectAndSwitchIsp } from './ispService';
 
 // Types
 type MonitoringMethod = 'MQTT' | 'PING' | 'SNMP' | 'HTTP' | 'NONE';
+type NodeType = 'PROBE' | 'ROUTER' | 'SWITCH' | 'SERVER' | 'GATEWAY' | 'ACCESS_POINT' | 'FIREWALL' | 'VIRTUAL' | 'INTERNET' | 'MAIN_LINK';
 type Status = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'UNKNOWN';
+
+// External DNS servers for internet connectivity checks
+const EXTERNAL_DNS_SERVERS = ['8.8.8.8', '1.1.1.1'];
 
 interface MonitoringResult {
   nodeId: string;
@@ -20,13 +25,19 @@ interface MonitoringResult {
   error?: string;
 }
 
+interface InternetCheckResult {
+  nodeId: string;
+  internetStatus: Status;
+  latency: number | null;
+}
+
 // Monitoring interval handle
 let monitoringInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
 
 // Default check interval in milliseconds (minimum 10 seconds)
 const MIN_CHECK_INTERVAL = 10000;
-const DEFAULT_CHECK_INTERVAL = 30000;
+const DEFAULT_CHECK_INTERVAL = 60000; // 60 seconds - reduced frequency for better performance
 
 /**
  * Check a single node based on its monitoring method
@@ -112,6 +123,228 @@ async function checkNode(node: {
 }
 
 /**
+ * Check internet connectivity by pinging external DNS servers
+ * Returns ONLINE if at least one server responds
+ */
+async function checkInternetConnectivity(): Promise<{ alive: boolean; latency: number | null }> {
+  try {
+    // Ping all external servers in parallel
+    const results = await Promise.all(
+      EXTERNAL_DNS_SERVERS.map(server => pingHost(server, 3))
+    );
+
+    // Find the first successful result
+    const successfulResult = results.find(r => r.alive);
+    
+    if (successfulResult) {
+      return {
+        alive: true,
+        latency: successfulResult.latency,
+      };
+    }
+
+    return { alive: false, latency: null };
+  } catch (error) {
+    console.error('Error checking internet connectivity:', error);
+    return { alive: false, latency: null };
+  }
+}
+
+/**
+ * Check internet connectivity for INTERNET type nodes
+ * These nodes represent external internet connections and are checked against external DNS
+ */
+async function checkInternetNodes(): Promise<InternetCheckResult[]> {
+  const internetNodes = await prisma.node.findMany({
+    where: {
+      type: 'INTERNET',
+    },
+    select: {
+      id: true,
+      name: true,
+      internetStatus: true,
+    },
+  });
+
+  if (internetNodes.length === 0) {
+    return [];
+  }
+
+  console.log(`🌐 Checking internet connectivity for ${internetNodes.length} INTERNET nodes...`);
+
+  // Check internet connectivity once (shared result for all internet nodes)
+  const internetCheck = await checkInternetConnectivity();
+  const now = new Date();
+  const newStatus: Status = internetCheck.alive ? 'ONLINE' : 'OFFLINE';
+
+  // Collect updates for batching
+  const nodeUpdates: { id: string; name: string; statusChanged: boolean }[] = [];
+  const statusHistoryCreates: { nodeId: string; name: string }[] = [];
+  const results: InternetCheckResult[] = [];
+
+  for (const node of internetNodes) {
+    const statusChanged = node.internetStatus !== newStatus;
+    nodeUpdates.push({ id: node.id, name: node.name, statusChanged });
+    
+    if (statusChanged) {
+      statusHistoryCreates.push({ nodeId: node.id, name: node.name });
+      const emoji = newStatus === 'ONLINE' ? '🌐' : '🔴';
+      console.log(`${emoji} ${node.name}: Internet ${node.internetStatus} → ${newStatus}`);
+    }
+
+    results.push({
+      nodeId: node.id,
+      internetStatus: newStatus,
+      latency: internetCheck.latency,
+    });
+  }
+
+  // Execute all database updates in a single transaction
+  if (nodeUpdates.length > 0) {
+    await prisma.$transaction([
+      // Batch node updates
+      ...nodeUpdates.map(node => 
+        prisma.node.update({
+          where: { id: node.id },
+          data: {
+            internetStatus: newStatus,
+            internetLastCheck: now,
+            status: newStatus,
+            latency: internetCheck.latency,
+            lastSeen: internetCheck.alive ? now : undefined,
+          },
+        })
+      ),
+      // Batch status history creates (only for status changes)
+      ...statusHistoryCreates.map(({ nodeId }) =>
+        prisma.probeStatus.create({
+          data: {
+            nodeId,
+            status: newStatus,
+            internetStatus: newStatus,
+            latency: internetCheck.latency,
+            message: internetCheck.alive ? 'Internet reachable' : 'Internet unreachable',
+          },
+        })
+      ),
+    ]);
+  }
+
+  // Broadcast updates in a single batched message
+  if (internetNodes.length > 0) {
+    const wsPayloads = internetNodes.map(node => ({
+      nodeId: node.id,
+      status: newStatus,
+      internetStatus: newStatus,
+      latency: internetCheck.latency,
+      lastSeen: internetCheck.alive ? now.toISOString() : undefined,
+      internetLastCheck: now.toISOString(),
+    }));
+    
+    broadcastMessage({
+      type: 'BATCH_STATUS_UPDATE',
+      payload: { updates: wsPayloads },
+      timestamp: now.toISOString(),
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Check internet access for nodes with checkInternetAccess enabled
+ * This is separate from INTERNET type nodes - these are regular nodes that want to verify
+ * their internet connectivity (e.g., a server that needs WAN access)
+ */
+async function checkNodesInternetAccess(): Promise<InternetCheckResult[]> {
+  const nodes = await prisma.node.findMany({
+    where: {
+      checkInternetAccess: true,
+      type: { not: 'INTERNET' }, // INTERNET nodes are handled separately
+    },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      internetStatus: true,
+    },
+  });
+
+  if (nodes.length === 0) {
+    return [];
+  }
+
+  console.log(`🌍 Checking internet access for ${nodes.length} nodes with checkInternetAccess enabled...`);
+
+  // Check internet connectivity once (shared result)
+  const internetCheck = await checkInternetConnectivity();
+  const now = new Date();
+
+  // Collect updates for batching
+  const nodeUpdates: { id: string; name: string; newInternetStatus: Status; statusChanged: boolean }[] = [];
+  const results: InternetCheckResult[] = [];
+
+  for (const node of nodes) {
+    // Only check internet if the node is locally reachable
+    let newInternetStatus: Status;
+    
+    if (node.status === 'OFFLINE') {
+      newInternetStatus = 'OFFLINE';
+    } else if (node.status === 'UNKNOWN') {
+      continue;
+    } else {
+      newInternetStatus = internetCheck.alive ? 'ONLINE' : 'OFFLINE';
+    }
+
+    const statusChanged = node.internetStatus !== newInternetStatus;
+    nodeUpdates.push({ id: node.id, name: node.name, newInternetStatus, statusChanged });
+
+    results.push({
+      nodeId: node.id,
+      internetStatus: newInternetStatus,
+      latency: internetCheck.latency,
+    });
+
+    if (statusChanged) {
+      const emoji = newInternetStatus === 'ONLINE' ? '🌍' : '🔴';
+      console.log(`${emoji} ${node.name}: Internet access ${node.internetStatus} → ${newInternetStatus}`);
+    }
+  }
+
+  // Execute all database updates in a single transaction
+  if (nodeUpdates.length > 0) {
+    await prisma.$transaction(
+      nodeUpdates.map(node => 
+        prisma.node.update({
+          where: { id: node.id },
+          data: {
+            internetStatus: node.newInternetStatus,
+            internetLastCheck: now,
+          },
+        })
+      )
+    );
+  }
+
+  // Broadcast updates in a single batched message
+  if (nodeUpdates.length > 0) {
+    const wsPayloads = nodeUpdates.map(update => ({
+      nodeId: update.id,
+      internetStatus: update.newInternetStatus,
+      internetLastCheck: now.toISOString(),
+    }));
+    
+    broadcastMessage({
+      type: 'BATCH_STATUS_UPDATE',
+      payload: { updates: wsPayloads },
+      timestamp: now.toISOString(),
+    });
+  }
+
+  return results;
+}
+
+/**
  * Run a monitoring check cycle for all active nodes
  */
 async function runMonitoringCycle(): Promise<void> {
@@ -163,59 +396,97 @@ async function runMonitoringCycle(): Promise<void> {
       results.push(...batchResults);
     }
 
-    // Update database and broadcast changes
+    // Collect updates for batch processing
     const now = new Date();
-    let updatedCount = 0;
+    const nodeUpdates: { nodeId: string; status: Status; latency: number | null; lastSeen?: Date }[] = [];
+    const statusHistoryCreates: { nodeId: string; status: Status; latency: number | null; message: string | null }[] = [];
+    const wsPayloads: { nodeId: string; status: Status; latency: number | null; lastSeen?: string }[] = [];
 
     for (const result of results) {
       const node = nodes.find((n) => n.id === result.nodeId);
       if (!node) continue;
 
-      // Only update if status changed or we have latency data
       const statusChanged = node.status !== result.status;
       
       if (statusChanged || result.latency !== null) {
-        // Update database
-        await prisma.node.update({
-          where: { id: result.nodeId },
-          data: {
-            status: result.status,
-            latency: result.latency,
-            lastSeen: result.status === 'ONLINE' ? now : undefined,
-          },
+        // Collect node update
+        nodeUpdates.push({
+          nodeId: result.nodeId,
+          status: result.status,
+          latency: result.latency,
+          lastSeen: result.status === 'ONLINE' ? now : undefined,
         });
 
-        // Record status history
-        await prisma.probeStatus.create({
-          data: {
+        // Collect status history only on actual changes
+        if (statusChanged) {
+          statusHistoryCreates.push({
             nodeId: result.nodeId,
             status: result.status,
             latency: result.latency,
             message: result.error || null,
-          },
-        });
-
-        // Broadcast update via WebSocket
-        broadcastMessage({
-          type: 'NODE_STATUS_UPDATE',
-          payload: {
-            nodeId: result.nodeId,
-            status: result.status,
-            latency: result.latency,
-            lastSeen: result.status === 'ONLINE' ? now.toISOString() : undefined,
-          },
-          timestamp: now.toISOString(),
-        });
-
-        updatedCount++;
-
-        // Log status changes
-        if (statusChanged) {
+          });
+          
           const emoji = result.status === 'ONLINE' ? '✅' : '❌';
           console.log(`${emoji} ${node.name}: ${node.status} → ${result.status}`);
         }
+
+        // Collect WebSocket payload
+        wsPayloads.push({
+          nodeId: result.nodeId,
+          status: result.status,
+          latency: result.latency,
+          lastSeen: result.status === 'ONLINE' ? now.toISOString() : undefined,
+        });
       }
     }
+
+    // Execute all database updates in a single transaction (much more efficient)
+    if (nodeUpdates.length > 0) {
+      await prisma.$transaction([
+        // Batch node updates
+        ...nodeUpdates.map(update => 
+          prisma.node.update({
+            where: { id: update.nodeId },
+            data: {
+              status: update.status,
+              latency: update.latency,
+              lastSeen: update.lastSeen,
+            },
+          })
+        ),
+        // Batch status history creates (only for actual changes)
+        ...statusHistoryCreates.map(create =>
+          prisma.probeStatus.create({
+            data: {
+              nodeId: create.nodeId,
+              status: create.status,
+              latency: create.latency,
+              message: create.message,
+            },
+          })
+        ),
+      ]);
+    }
+
+    // Broadcast all WebSocket updates in a single batched message (much more efficient)
+    if (wsPayloads.length > 0) {
+      broadcastMessage({
+        type: 'BATCH_STATUS_UPDATE',
+        payload: { updates: wsPayloads },
+        timestamp: now.toISOString(),
+      });
+    }
+
+    const updatedCount = nodeUpdates.length;
+
+    // Also check internet nodes (INTERNET type nodes)
+    await checkInternetNodes();
+
+    // Check internet access for nodes with checkInternetAccess enabled
+    await checkNodesInternetAccess();
+
+    // Detect ISP and auto-switch active source if needed
+    await detectAndSwitchIsp();
 
     const duration = Date.now() - startTime;
     console.log(`✔️  Monitoring cycle complete: ${updatedCount}/${nodes.length} updated in ${duration}ms`);
@@ -319,5 +590,19 @@ export async function checkNodeNow(nodeId: string): Promise<MonitoringResult | n
   });
 
   return result;
+}
+
+/**
+ * Check internet connectivity status (can be called externally)
+ */
+export async function getInternetStatus(): Promise<{ alive: boolean; latency: number | null }> {
+  return checkInternetConnectivity();
+}
+
+/**
+ * Trigger internet check for all INTERNET nodes
+ */
+export async function triggerInternetCheck(): Promise<InternetCheckResult[]> {
+  return checkInternetNodes();
 }
 

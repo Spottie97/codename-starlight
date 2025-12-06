@@ -5,7 +5,8 @@ import { NetworkCanvas } from './components/NetworkCanvas/NetworkCanvas';
 import { StatusPanel } from './components/StatusPanel/StatusPanel';
 import { Toolbar } from './components/Toolbar/Toolbar';
 import { NodeEditor } from './components/NodeEditor/NodeEditor';
-import type { WSMessage, NodeStatusUpdatePayload } from './types/network';
+import { GroupEditor } from './components/GroupEditor/GroupEditor';
+import type { WSMessage, NodeStatusUpdatePayload, BatchStatusUpdatePayload, NodeGroup, GroupConnection } from './types/network';
 
 function App() {
   const { 
@@ -17,7 +18,16 @@ function App() {
     addConnection,
     removeConnection,
     updateNodeStatus,
+    batchUpdateNodeStatus,
+    addGroup,
+    updateGroup,
+    removeGroup,
+    assignNodeToGroup,
+    addGroupConnection,
+    removeGroupConnection,
+    setActiveSource,
     selectedNodeId,
+    selectedGroupId,
   } = useNetworkStore();
 
   // Handle WebSocket messages
@@ -27,6 +37,10 @@ function App() {
     switch (message.type) {
       case 'NODE_STATUS_UPDATE':
         updateNodeStatus(message.payload as NodeStatusUpdatePayload);
+        break;
+      case 'BATCH_STATUS_UPDATE':
+        // Handle batched status updates (much more efficient for monitoring cycles)
+        batchUpdateNodeStatus((message.payload as BatchStatusUpdatePayload).updates);
         break;
       case 'NODE_CREATED':
         addNode(message.payload as any);
@@ -45,6 +59,32 @@ function App() {
       case 'CONNECTION_DELETED':
         const connDelete = message.payload as { id: string };
         removeConnection(connDelete.id);
+        break;
+      case 'CONNECTION_ACTIVE_SOURCE_CHANGED':
+        const activeSourceChange = message.payload as { connectionId: string; targetNodeId: string; isActiveSource: boolean };
+        setActiveSource(activeSourceChange.connectionId, activeSourceChange.targetNodeId);
+        break;
+      case 'GROUP_CREATED':
+        addGroup(message.payload as NodeGroup);
+        break;
+      case 'GROUP_UPDATED':
+        const groupUpdate = message.payload as NodeGroup;
+        updateGroup(groupUpdate.id, groupUpdate);
+        break;
+      case 'GROUP_DELETED':
+        const groupDelete = message.payload as { id: string };
+        removeGroup(groupDelete.id);
+        break;
+      case 'GROUP_CONNECTION_CREATED':
+        addGroupConnection(message.payload as GroupConnection);
+        break;
+      case 'GROUP_CONNECTION_DELETED':
+        const groupConnDelete = message.payload as { id: string };
+        removeGroupConnection(groupConnDelete.id);
+        break;
+      case 'NODE_GROUP_CHANGED':
+        const groupChange = message.payload as { nodeId: string; groupId: string | null };
+        assignNodeToGroup(groupChange.nodeId, groupChange.groupId);
         break;
       case 'PING':
         // Heartbeat, ignore
@@ -69,11 +109,11 @@ function App() {
     <div className="h-screen w-screen overflow-hidden bg-dark-900 grid-bg">
       {/* Header */}
       <header className="absolute top-0 left-0 right-0 z-50 h-14 glass-dark flex items-center justify-between px-6">
-        <div className="flex items-center gap-4">
-          <h1 className="font-display text-2xl font-bold text-neon-blue text-glow tracking-wider">
+        <div className="flex items-center gap-2 md:gap-4">
+          <h1 className="font-display text-xl md:text-2xl font-bold text-neon-blue text-glow tracking-wider">
             STARLIGHT
           </h1>
-          <span className="text-sm text-gray-500 font-body">Network Monitor</span>
+          <span className="text-xs md:text-sm text-gray-500 font-body hidden sm:inline">Network Monitor</span>
         </div>
         
         <div className="flex items-center gap-4">
@@ -104,6 +144,9 @@ function App() {
 
       {/* Node Editor (when a node is selected) */}
       {selectedNodeId && <NodeEditor />}
+
+      {/* Group Editor (when a group is selected) */}
+      {selectedGroupId && <GroupEditor />}
 
       {/* Scanline effect */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden scanline opacity-20" />
