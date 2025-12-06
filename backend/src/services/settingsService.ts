@@ -135,10 +135,12 @@ export async function getOrCreateSettings(): Promise<SystemSettingsData> {
 
 /**
  * Check if initial setup has been completed
+ * Setup is only complete if BOTH the flag is set AND a password hash exists
  */
 export async function isSetupComplete(): Promise<boolean> {
   const settings = await getOrCreateSettings();
-  return settings.isSetupComplete;
+  // Must have both the flag AND an actual password configured
+  return settings.isSetupComplete && !!settings.adminPasswordHash;
 }
 
 /**

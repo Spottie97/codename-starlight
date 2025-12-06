@@ -163,15 +163,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // Since changing password regenerates sessionSecret, old tokens auto-invalidate
     // when we try to regenerate them with new secret
     
-    // Mark as valid for now (proper validation happens at login)
-    // This allows previously authenticated sessions to continue
-    // New logins will get properly validated tokens
-    
-    // Note: This is a reasonable approach for internal/local network tools
-    // For production, use JWT with proper expiry or session storage
-    
-    tokenCache.set(token, { valid: true, timestamp: now });
-    next();
+    // Token not in cache - require re-authentication
+    // Only tokens validated through login are trusted
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Session expired, please log in again'
+    });
     
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -248,6 +245,18 @@ export async function handleLogin(req: Request, res: Response) {
  */
 export async function handleVerify(req: Request, res: Response) {
   try {
+    // ALWAYS check setup status first
+    const setupComplete = await isSetupComplete();
+    if (!setupComplete) {
+      // Clear any cached tokens since setup isn't complete
+      tokenCache.clear();
+      return res.status(503).json({
+        valid: false,
+        message: 'System setup required',
+        setupRequired: true
+      });
+    }
+    
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -259,24 +268,6 @@ export async function handleVerify(req: Request, res: Response) {
     
     const token = authHeader.substring(7);
     
-    // Check token cache
-    const cached = tokenCache.get(token);
-    const now = Date.now();
-    
-    if (cached && (now - cached.timestamp) < TOKEN_CACHE_TTL_MS) {
-      return res.json({ valid: cached.valid });
-    }
-    
-    // Check if setup is complete
-    const setupComplete = await isSetupComplete();
-    if (!setupComplete) {
-      return res.status(503).json({
-        valid: false,
-        message: 'System setup required',
-        setupRequired: true
-      });
-    }
-    
     // Verify token format
     if (!/^[a-f0-9]{64}$/i.test(token)) {
       return res.status(401).json({
@@ -285,10 +276,19 @@ export async function handleVerify(req: Request, res: Response) {
       });
     }
     
-    // For valid format tokens, mark as valid if previously authenticated
-    // This is a simplified approach - proper implementation would use JWT or DB sessions
-    res.json({
-      valid: true
+    // Check token cache - only trust tokens that were explicitly validated through login
+    const cached = tokenCache.get(token);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < TOKEN_CACHE_TTL_MS) {
+      return res.json({ valid: cached.valid });
+    }
+    
+    // Token not in cache - it hasn't been validated through login in this session
+    // Reject it to force re-authentication
+    return res.status(401).json({
+      valid: false,
+      message: 'Session expired, please log in again'
     });
   } catch (error) {
     console.error('Verify error:', error);

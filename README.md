@@ -90,6 +90,12 @@ docker compose down
 docker compose down -v
 ```
 
+**Fresh Install (if upgrading or reinstalling):**
+```bash
+docker compose down -v && docker compose up -d
+```
+This removes old database data and starts fresh with the setup wizard.
+
 ### Port Configuration
 
 If you have port conflicts, you can customize the ports using environment variables:
