@@ -56,7 +56,12 @@ prisma/migrations/.migration_lock.toml
 # Local data volumes (if not using Docker volumes)
 data/
 
-
-
-
+# n8n workflows (contain sensitive credentials and group IDs)
+*WhatsApp*.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json
+!components.json
 
