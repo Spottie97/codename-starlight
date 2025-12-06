@@ -12,9 +12,18 @@ import {
   AlertCircle,
   CheckCircle,
   Loader2,
-  Send
+  Send,
+  Zap,
+  Trash2,
+  Database
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { 
+  usePerformanceSettings, 
+  setAnimationMode, 
+  setGlowEffectsEnabled,
+  type AnimationMode 
+} from '../../hooks/useGlobalAnimation';
 
 interface SettingsProps {
   isOpen: boolean;
@@ -28,6 +37,17 @@ interface PublicSettings {
   probeTimeoutMs: number;
   statusHistoryRetentionDays: number;
   internetCheckTargets: string;
+  // Performance settings
+  monitoringIntervalMs: number;
+  monitoringConcurrency: number;
+  enableStatusHistory: boolean;
+  statusHistoryCleanupEnabled: boolean;
+}
+
+interface StatusHistoryStats {
+  totalRecords: number;
+  oldestRecord: string | null;
+  newestRecord: string | null;
 }
 
 // API base URL
@@ -38,7 +58,7 @@ const API_BASE = (() => {
     : '';
 })();
 
-type TabId = 'security' | 'webhooks' | 'monitoring';
+type TabId = 'security' | 'webhooks' | 'monitoring' | 'performance';
 
 export function Settings({ isOpen, onClose }: SettingsProps) {
   const { logout, getToken } = useAuth();
@@ -69,10 +89,23 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
   const [internetTargets, setInternetTargets] = useState('');
   const [isSavingMonitoring, setIsSavingMonitoring] = useState(false);
 
+  // Performance tab state (local settings from hook)
+  const perfSettings = usePerformanceSettings();
+  
+  // Performance tab state (server settings)
+  const [monitoringInterval, setMonitoringInterval] = useState('60000');
+  const [monitoringConcurrency, setMonitoringConcurrency] = useState('10');
+  const [enableStatusHistory, setEnableStatusHistory] = useState(true);
+  const [statusHistoryCleanupEnabled, setStatusHistoryCleanupEnabled] = useState(true);
+  const [isSavingPerformance, setIsSavingPerformance] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [historyStats, setHistoryStats] = useState<StatusHistoryStats | null>(null);
+
   // Fetch settings on mount
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
+      fetchHistoryStats();
     }
   }, [isOpen]);
 
@@ -101,10 +134,34 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
       setProbeTimeout(String(data.data.probeTimeoutMs));
       setRetentionDays(String(data.data.statusHistoryRetentionDays));
       setInternetTargets(data.data.internetCheckTargets);
+      // Performance settings
+      setMonitoringInterval(String(data.data.monitoringIntervalMs));
+      setMonitoringConcurrency(String(data.data.monitoringConcurrency));
+      setEnableStatusHistory(data.data.enableStatusHistory);
+      setStatusHistoryCleanupEnabled(data.data.statusHistoryCleanupEnabled);
     } catch (err) {
       setError('Failed to connect to server');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchHistoryStats = async () => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_BASE}/api/settings/status-history-stats`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setHistoryStats(data.data);
+      }
+    } catch (err) {
+      // Silently fail - stats are not critical
     }
   };
 
@@ -278,12 +335,108 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
     }
   };
 
+  const handleSavePerformance = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setIsSavingPerformance(true);
+
+    const interval = parseInt(monitoringInterval, 10);
+    const concurrency = parseInt(monitoringConcurrency, 10);
+
+    if (isNaN(interval) || interval < 10000) {
+      setError('Monitoring interval must be at least 10 seconds (10000ms)');
+      setIsSavingPerformance(false);
+      return;
+    }
+
+    if (isNaN(concurrency) || concurrency < 1 || concurrency > 50) {
+      setError('Monitoring concurrency must be between 1 and 50');
+      setIsSavingPerformance(false);
+      return;
+    }
+
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          monitoringIntervalMs: interval,
+          monitoringConcurrency: concurrency,
+          enableStatusHistory,
+          statusHistoryCleanupEnabled,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || 'Failed to save performance settings');
+        return;
+      }
+
+      setSuccess('Performance settings saved successfully');
+      setSettings(data.data);
+    } catch (err) {
+      setError('Failed to connect to server');
+    } finally {
+      setIsSavingPerformance(false);
+    }
+  };
+
+  const handleCleanupHistory = async () => {
+    setError('');
+    setSuccess('');
+    setIsCleaningUp(true);
+
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_BASE}/api/settings/cleanup-status-history`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || 'Failed to cleanup status history');
+        return;
+      }
+
+      setSuccess(`Cleaned up ${data.data.deletedCount} old status history records`);
+      fetchHistoryStats(); // Refresh stats
+    } catch (err) {
+      setError('Failed to connect to server');
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
+
+  const handleAnimationModeChange = (mode: AnimationMode) => {
+    setAnimationMode(mode);
+    setSuccess(`Animation mode set to ${mode}`);
+    setTimeout(() => setSuccess(''), 2000);
+  };
+
+  const handleGlowEffectsChange = (enabled: boolean) => {
+    setGlowEffectsEnabled(enabled);
+    setSuccess(`Glow effects ${enabled ? 'enabled' : 'disabled'}`);
+    setTimeout(() => setSuccess(''), 2000);
+  };
+
   if (!isOpen) return null;
 
   const tabs = [
     { id: 'security' as TabId, label: 'Security', icon: Shield },
     { id: 'webhooks' as TabId, label: 'Webhooks', icon: Webhook },
     { id: 'monitoring' as TabId, label: 'Monitoring', icon: Activity },
+    { id: 'performance' as TabId, label: 'Performance', icon: Zap },
   ];
 
   return (
@@ -690,6 +843,276 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                       )}
                     </button>
                   </form>
+                )}
+
+                {/* Performance Tab */}
+                {activeTab === 'performance' && (
+                  <div className="space-y-8">
+                    {/* Client-side Performance Settings */}
+                    <div>
+                      <h3 className="text-lg font-display text-white mb-4">Visual Performance</h3>
+                      <p className="text-gray-400 text-sm mb-6">
+                        Adjust visual effects to reduce CPU/GPU usage. Changes are applied immediately and saved locally.
+                      </p>
+
+                      {/* Animation Mode */}
+                      <div className="mb-6">
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
+                          Animation Mode
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(['full', 'reduced', 'off'] as AnimationMode[]).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => handleAnimationModeChange(mode)}
+                              className={`py-3 px-4 rounded border-2 font-display text-sm uppercase tracking-wider transition-all
+                                ${perfSettings.animationMode === mode
+                                  ? 'border-neon-blue bg-neon-blue/20 text-neon-blue'
+                                  : 'border-dark-500 text-gray-400 hover:border-gray-400'
+                                }`}
+                            >
+                              {mode === 'full' && '🎨 Full'}
+                              {mode === 'reduced' && '⚡ Reduced'}
+                              {mode === 'off' && '🔋 Off'}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">
+                          {perfSettings.animationMode === 'full' && 'All animations enabled at full frame rate'}
+                          {perfSettings.animationMode === 'reduced' && 'Animations run at reduced frame rate (15 FPS)'}
+                          {perfSettings.animationMode === 'off' && 'All animations disabled for maximum performance'}
+                        </p>
+                      </div>
+
+                      {/* Glow Effects */}
+                      <div>
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
+                          Glow Effects
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={() => handleGlowEffectsChange(!perfSettings.enableGlowEffects)}
+                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors
+                              ${perfSettings.enableGlowEffects ? 'bg-neon-blue' : 'bg-dark-600'}`}
+                          >
+                            <span
+                              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform
+                                ${perfSettings.enableGlowEffects ? 'translate-x-7' : 'translate-x-1'}`}
+                            />
+                          </button>
+                          <span className="text-sm text-gray-400">
+                            {perfSettings.enableGlowEffects ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">
+                          Disable to reduce GPU usage from shadow and blur effects
+                        </p>
+                      </div>
+                    </div>
+
+                    <hr className="border-dark-500" />
+
+                    {/* Server-side Performance Settings */}
+                    <form onSubmit={handleSavePerformance} className="space-y-6">
+                      <div>
+                        <h3 className="text-lg font-display text-white mb-4">Server Performance</h3>
+                        <p className="text-gray-400 text-sm mb-6">
+                          Configure backend monitoring frequency and resource usage.
+                        </p>
+                      </div>
+
+                      {/* Monitoring Interval */}
+                      <div>
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-2">
+                          Monitoring Interval
+                        </label>
+                        <select
+                          value={monitoringInterval}
+                          onChange={(e) => setMonitoringInterval(e.target.value)}
+                          className="w-full px-4 py-3 bg-dark-800 border border-dark-500 rounded
+                                   text-white font-body
+                                   focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue"
+                        >
+                          <option value="15000">15 seconds (High frequency)</option>
+                          <option value="30000">30 seconds</option>
+                          <option value="60000">60 seconds (Default)</option>
+                          <option value="120000">2 minutes</option>
+                          <option value="300000">5 minutes (Low frequency)</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          How often the server checks node status. Lower = more responsive but higher resource usage.
+                        </p>
+                      </div>
+
+                      {/* Monitoring Concurrency */}
+                      <div>
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-2">
+                          Parallel Checks
+                        </label>
+                        <input
+                          type="number"
+                          value={monitoringConcurrency}
+                          onChange={(e) => setMonitoringConcurrency(e.target.value)}
+                          min="1"
+                          max="50"
+                          className="w-full px-4 py-3 bg-dark-800 border border-dark-500 rounded
+                                   text-white font-body placeholder-gray-500
+                                   focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue"
+                          placeholder="10"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Maximum number of nodes checked simultaneously (1-50). Lower = less network/CPU load.
+                        </p>
+                      </div>
+
+                      {/* Status History Toggle */}
+                      <div>
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
+                          Record Status History
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setEnableStatusHistory(!enableStatusHistory)}
+                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors
+                              ${enableStatusHistory ? 'bg-neon-blue' : 'bg-dark-600'}`}
+                          >
+                            <span
+                              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform
+                                ${enableStatusHistory ? 'translate-x-7' : 'translate-x-1'}`}
+                            />
+                          </button>
+                          <span className="text-sm text-gray-400">
+                            {enableStatusHistory ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">
+                          Disable to reduce database writes. Analytics will not be available.
+                        </p>
+                      </div>
+
+                      {/* Auto Cleanup Toggle */}
+                      <div>
+                        <label className="block text-sm font-display text-gray-400 uppercase tracking-wide mb-3">
+                          Auto-cleanup Old Records
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setStatusHistoryCleanupEnabled(!statusHistoryCleanupEnabled)}
+                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors
+                              ${statusHistoryCleanupEnabled ? 'bg-neon-blue' : 'bg-dark-600'}`}
+                          >
+                            <span
+                              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform
+                                ${statusHistoryCleanupEnabled ? 'translate-x-7' : 'translate-x-1'}`}
+                            />
+                          </button>
+                          <span className="text-sm text-gray-400">
+                            {statusHistoryCleanupEnabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">
+                          Automatically delete records older than the retention period (hourly check)
+                        </p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSavingPerformance}
+                        className="w-full py-3 px-6 font-display font-semibold uppercase tracking-wider
+                                 bg-transparent border-2 border-neon-blue text-neon-blue rounded
+                                 transition-all duration-300 ease-out
+                                 hover:bg-neon-blue hover:text-dark-900
+                                 disabled:opacity-50 disabled:cursor-not-allowed
+                                 flex items-center justify-center gap-2"
+                      >
+                        {isSavingPerformance ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-5 h-5" />
+                            Save Server Settings
+                          </>
+                        )}
+                      </button>
+                    </form>
+
+                    <hr className="border-dark-500" />
+
+                    {/* Database Status & Cleanup */}
+                    <div>
+                      <h3 className="text-lg font-display text-white mb-4">Database Management</h3>
+                      
+                      {/* History Stats */}
+                      {historyStats && (
+                        <div className="mb-6 p-4 bg-dark-800/50 rounded border border-dark-600">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Database className="w-4 h-4 text-neon-purple" />
+                            <span className="text-sm font-display text-gray-300 uppercase tracking-wide">
+                              Status History
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-4 text-center">
+                            <div>
+                              <div className="text-2xl font-display text-white">
+                                {historyStats.totalRecords.toLocaleString()}
+                              </div>
+                              <div className="text-xs text-gray-500">Total Records</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-body text-gray-300">
+                                {historyStats.oldestRecord 
+                                  ? new Date(historyStats.oldestRecord).toLocaleDateString()
+                                  : 'N/A'}
+                              </div>
+                              <div className="text-xs text-gray-500">Oldest</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-body text-gray-300">
+                                {historyStats.newestRecord 
+                                  ? new Date(historyStats.newestRecord).toLocaleDateString()
+                                  : 'N/A'}
+                              </div>
+                              <div className="text-xs text-gray-500">Newest</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleCleanupHistory}
+                        disabled={isCleaningUp}
+                        className="w-full py-3 px-6 font-display font-semibold uppercase tracking-wider
+                                 bg-transparent border-2 border-neon-pink text-neon-pink rounded
+                                 transition-all duration-300 ease-out
+                                 hover:bg-neon-pink hover:text-dark-900
+                                 disabled:opacity-50 disabled:cursor-not-allowed
+                                 flex items-center justify-center gap-2"
+                      >
+                        {isCleaningUp ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Cleaning...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-5 h-5" />
+                            Cleanup Old Records Now
+                          </>
+                        )}
+                      </button>
+                      <p className="mt-2 text-xs text-gray-500 text-center">
+                        Deletes records older than the configured retention period
+                      </p>
+                    </div>
+                  </div>
                 )}
               </>
             )}

@@ -11,7 +11,11 @@ import { SetupWizard } from './components/SetupWizard';
 import { Settings } from './components/Settings';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LogOut, Loader2, Settings as SettingsIcon } from 'lucide-react';
+import { initPerformanceSettings } from './hooks/useGlobalAnimation';
 import type { WSMessage, NodeStatusUpdatePayload, BatchStatusUpdatePayload, NodeGroup, GroupConnection } from './types/network';
+
+// Initialize performance settings on app load (applies saved CSS classes)
+initPerformanceSettings();
 
 // API base URL
 const API_BASE = (() => {

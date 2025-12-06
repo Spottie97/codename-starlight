@@ -3,7 +3,7 @@ import { Group, Circle, Text, Ring, Rect, RegularPolygon, Line } from 'react-kon
 import Konva from 'konva';
 import type { NetworkNode as INetworkNode, EditorMode, MonitoringMethod } from '../../types/network';
 import { STATUS_COLORS, NODE_TYPE_LABELS } from '../../types/network';
-import { useGlobalAnimation, calculatePulse } from '../../hooks/useGlobalAnimation';
+import { useGlobalAnimation, calculatePulse, getStaticPulse, usePerformanceSettings, useGlowEffects } from '../../hooks/useGlobalAnimation';
 
 // Monitoring method badge colors
 const MONITORING_METHOD_COLORS: Record<MonitoringMethod, string> = {
@@ -46,6 +46,11 @@ export function NetworkNode({
 }: NetworkNodeProps) {
   const groupRef = useRef<Konva.Group>(null);
   const [isHovered, setIsHovered] = useState(false);
+  
+  // Performance settings
+  const perfSettings = usePerformanceSettings();
+  const enableGlow = useGlowEffects();
+  const animationsEnabled = perfSettings.animationMode !== 'off';
 
   const isInternetNode = node.type === 'INTERNET';
   const isMainLinkNode = node.type === 'MAIN_LINK';
@@ -59,35 +64,37 @@ export function NetworkNode({
   const nodeRadius = isSpecialNode ? 40 : 30;
 
   // Use global animation for pulse effect (shared across all nodes - much more efficient)
-  const animationTime = useGlobalAnimation(30); // 30 FPS is sufficient for pulse effect
+  // FPS is automatically reduced in 'reduced' mode by the hook
+  const animationTime = useGlobalAnimation(30);
   const pulsePeriod = isInternetNode ? 1500 : 2000;
-  const shouldAnimate = primaryStatus === 'ONLINE' || primaryStatus === 'OFFLINE' || primaryStatus === 'DEGRADED';
+  const shouldAnimate = animationsEnabled && (primaryStatus === 'ONLINE' || primaryStatus === 'OFFLINE' || primaryStatus === 'DEGRADED');
   
   // Calculate pulse values from global time (no individual animation loops)
+  // Returns static values when animations are off
   const pulse = useMemo(() => {
-    if (!shouldAnimate) return { scale: 1, opacity: 0.4 };
+    if (!shouldAnimate) return getStaticPulse();
     return calculatePulse(animationTime, pulsePeriod);
   }, [animationTime, pulsePeriod, shouldAnimate]);
 
-  // Hover effect
+  // Hover effect - skip animation when animations are disabled
   useEffect(() => {
     if (!groupRef.current) return;
     
     const group = groupRef.current;
-    if (isHovered || isSelected) {
+    const targetScale = (isHovered || isSelected) ? 1.1 : 1;
+    
+    if (animationsEnabled) {
       group.to({
-        scaleX: 1.1,
-        scaleY: 1.1,
+        scaleX: targetScale,
+        scaleY: targetScale,
         duration: 0.2,
       });
     } else {
-      group.to({
-        scaleX: 1,
-        scaleY: 1,
-        duration: 0.2,
-      });
+      // Instant scale change when animations disabled
+      group.scaleX(targetScale);
+      group.scaleY(targetScale);
     }
-  }, [isHovered, isSelected]);
+  }, [isHovered, isSelected, animationsEnabled]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     // Stop propagation to prevent the Stage from thinking it was dragged
@@ -149,9 +156,9 @@ export function NetworkNode({
           fill="#12121a"
           stroke={INTERNET_COLOR}
           strokeWidth={4}
-          shadowColor={INTERNET_COLOR}
-          shadowBlur={isHovered ? 30 : 20}
-          shadowOpacity={0.9}
+          shadowColor={enableGlow ? INTERNET_COLOR : undefined}
+          shadowBlur={enableGlow ? (isHovered ? 30 : 20) : 0}
+          shadowOpacity={enableGlow ? 0.9 : 0}
         />
 
         {/* Cloud inner decoration - three overlapping circles */}
@@ -163,9 +170,9 @@ export function NetworkNode({
         <Circle
           radius={12}
           fill={statusColor}
-          shadowColor={statusColor}
-          shadowBlur={20}
-          shadowOpacity={1}
+          shadowColor={enableGlow ? statusColor : undefined}
+          shadowBlur={enableGlow ? 20 : 0}
+          shadowOpacity={enableGlow ? 1 : 0}
         />
 
         {/* "WAN" label inside */}
@@ -275,9 +282,9 @@ export function NetworkNode({
           fill="#12121a"
           stroke={MAIN_LINK_COLOR}
           strokeWidth={4}
-          shadowColor={MAIN_LINK_COLOR}
-          shadowBlur={isHovered ? 30 : 20}
-          shadowOpacity={0.9}
+          shadowColor={enableGlow ? MAIN_LINK_COLOR : undefined}
+          shadowBlur={enableGlow ? (isHovered ? 30 : 20) : 0}
+          shadowOpacity={enableGlow ? 0.9 : 0}
           rotation={30}
         />
 
@@ -302,9 +309,9 @@ export function NetworkNode({
         <Circle
           radius={10}
           fill={statusColor}
-          shadowColor={statusColor}
-          shadowBlur={18}
-          shadowOpacity={1}
+          shadowColor={enableGlow ? statusColor : undefined}
+          shadowBlur={enableGlow ? 18 : 0}
+          shadowOpacity={enableGlow ? 1 : 0}
         />
 
         {/* Internet status indicator - prominent for main link */}
@@ -315,8 +322,8 @@ export function NetworkNode({
           fill={STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN}
           stroke="#12121a"
           strokeWidth={2}
-          shadowColor={STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN}
-          shadowBlur={8}
+          shadowColor={enableGlow ? (STATUS_COLORS[node.internetStatus] || STATUS_COLORS.UNKNOWN) : undefined}
+          shadowBlur={enableGlow ? 8 : 0}
         />
 
         {/* Node name */}
@@ -423,9 +430,9 @@ export function NetworkNode({
         fill="#12121a"
         stroke={node.color}
         strokeWidth={3}
-        shadowColor={node.color}
-        shadowBlur={isHovered ? 20 : 10}
-        shadowOpacity={0.8}
+        shadowColor={enableGlow ? node.color : undefined}
+        shadowBlur={enableGlow ? (isHovered ? 20 : 10) : 0}
+        shadowOpacity={enableGlow ? 0.8 : 0}
       />
 
       {/* Inner glow */}
@@ -441,9 +448,9 @@ export function NetworkNode({
       <Circle
         radius={8}
         fill={statusColor}
-        shadowColor={statusColor}
-        shadowBlur={15}
-        shadowOpacity={1}
+        shadowColor={enableGlow ? statusColor : undefined}
+        shadowBlur={enableGlow ? 15 : 0}
+        shadowOpacity={enableGlow ? 1 : 0}
       />
 
       {/* Internet status indicator (small dot) */}
@@ -464,9 +471,9 @@ export function NetworkNode({
             height={14}
             cornerRadius={3}
             fill={MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280'}
-            shadowColor={MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280'}
-            shadowBlur={5}
-            shadowOpacity={0.5}
+            shadowColor={enableGlow ? (MONITORING_METHOD_COLORS[node.monitoringMethod] || '#6b7280') : undefined}
+            shadowBlur={enableGlow ? 5 : 0}
+            shadowOpacity={enableGlow ? 0.5 : 0}
           />
           <Text
             text={MONITORING_METHOD_SHORT[node.monitoringMethod] || '?'}

@@ -249,7 +249,104 @@ body {
   @apply bg-gray-500/20 text-gray-400 border border-gray-500/30;
 }
 
+/* ==========================================================================
+   Performance Mode Classes
+   These are applied to the body element based on user settings
+   ========================================================================== */
 
+/* Animation mode: reduced - slower/simpler animations */
+body.animation-reduced {
+  /* Slow down all transitions */
+  --animation-speed: 0.5;
+}
 
+body.animation-reduced .pulse-online,
+body.animation-reduced .pulse-offline,
+body.animation-reduced .pulse-degraded {
+  animation-duration: 4s; /* Slower pulse */
+}
 
+body.animation-reduced .connection-line {
+  animation-duration: 2s; /* Slower flow */
+}
+
+body.animation-reduced .scanline::before {
+  animation-duration: 6s; /* Slower scanline */
+}
+
+/* Animation mode: off - disable all CSS animations */
+body.animation-off *,
+body.animation-off *::before,
+body.animation-off *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+body.animation-off .pulse-online,
+body.animation-off .pulse-offline,
+body.animation-off .pulse-degraded {
+  animation: none !important;
+}
+
+body.animation-off .connection-line {
+  animation: none !important;
+}
+
+body.animation-off .scanline::before {
+  animation: none !important;
+  display: none;
+}
+
+/* Static glow for animation-off mode */
+body.animation-off .pulse-online {
+  box-shadow: 0 0 8px #39ff14;
+}
+
+body.animation-off .pulse-offline {
+  box-shadow: 0 0 8px #ff2a6d;
+}
+
+body.animation-off .pulse-degraded {
+  box-shadow: 0 0 8px #fffc00;
+}
+
+/* Glow effects disabled */
+body.glow-disabled .text-glow {
+  text-shadow: none !important;
+}
+
+body.glow-disabled .border-glow {
+  box-shadow: none !important;
+}
+
+body.glow-disabled .pulse-online,
+body.glow-disabled .pulse-offline,
+body.glow-disabled .pulse-degraded {
+  box-shadow: none !important;
+}
+
+/* Remove backdrop blur when glow is disabled (it's expensive) */
+body.glow-disabled .glass-blur {
+  backdrop-filter: none !important;
+}
+
+/* Performance indicator in header when in performance mode */
+body.animation-reduced::after,
+body.animation-off::after {
+  content: '';
+  position: fixed;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neon-purple);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+body.animation-off::after {
+  background: var(--neon-pink);
+}
 
