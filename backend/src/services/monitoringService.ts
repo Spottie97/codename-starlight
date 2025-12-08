@@ -12,8 +12,7 @@ import { detectAndSwitchIsp } from './ispService';
 import { 
   triggerNodeDown, 
   triggerNodeUp, 
-  triggerInternetDown, 
-  triggerInternetUp,
+  triggerInternetStatus,
   triggerGroupDegraded,
   isWebhookEnabled 
 } from './webhookService';
@@ -48,6 +47,8 @@ let currentIntervalMs: number = 60000;
 
 // Track group health for degradation detection
 const groupHealthCache = new Map<string, { total: number; offline: number }>();
+const internetStatusStability = new Map<string, { status: Status; changedAt: number }>();
+const INTERNET_STABILITY_WINDOW_MS = 20000; // require stability before internet webhooks
 
 // Default check interval in milliseconds (minimum 10 seconds)
 const MIN_CHECK_INTERVAL = 10000;
@@ -178,6 +179,22 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
       id: true,
       name: true,
       internetStatus: true,
+      latency: true,
+      status: true,
+      checkInternetAccess: true,
+      monitoringMethod: true,
+      ipAddress: true,
+      snmpCommunity: true,
+      snmpVersion: true,
+      httpEndpoint: true,
+      httpExpectedCode: true,
+      outgoingConnections: {
+        include: {
+          targetNode: {
+            select: { id: true, name: true, type: true },
+          },
+        },
+      },
     },
   });
 
@@ -187,47 +204,77 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
 
   console.log(`🌐 Checking internet connectivity for ${internetNodes.length} INTERNET nodes...`);
 
-  // Check internet connectivity once (shared result for all internet nodes)
-  const internetCheck = await checkInternetConnectivity();
+  // Shared fallback internet check (used when per-node polling is not available)
+  const sharedInternetCheck = await checkInternetConnectivity();
   const now = new Date();
-  const newStatus: Status = internetCheck.alive ? 'ONLINE' : 'OFFLINE';
 
   // Collect updates for batching
-  const nodeUpdates: { id: string; name: string; statusChanged: boolean }[] = [];
-  const statusHistoryCreates: { nodeId: string; name: string }[] = [];
+  const nodeUpdates: { id: string; name: string; newInternetStatus: Status; latency: number | null; statusChanged: boolean }[] = [];
+  const statusHistoryCreates: { nodeId: string; name: string; newInternetStatus: Status; latency: number | null }[] = [];
   const results: InternetCheckResult[] = [];
+  const statusMap = new Map<string, Status>();
+  const latencyMap = new Map<string, number | null>();
+  const stabilityMap = new Map<string, boolean>();
 
   for (const node of internetNodes) {
-    const statusChanged = node.internetStatus !== newStatus;
-    nodeUpdates.push({ id: node.id, name: node.name, statusChanged });
+    let newInternetStatus: Status = 'UNKNOWN';
+    let latency: number | null = null;
+
+    // If node is definitively offline, keep it offline
+    if (node.status === 'OFFLINE') {
+      newInternetStatus = 'OFFLINE';
+    } else {
+      const canPoll =
+        node.monitoringMethod !== 'NONE' &&
+        node.monitoringMethod !== 'MQTT' &&
+        !!node.ipAddress;
+
+      if (canPoll) {
+        const pollResult = await checkNode({
+          id: node.id,
+          monitoringMethod: node.monitoringMethod as MonitoringMethod,
+          ipAddress: node.ipAddress,
+          snmpCommunity: node.snmpCommunity || 'public',
+          snmpVersion: (node.snmpVersion || '2c') as any,
+          httpEndpoint: node.httpEndpoint,
+          httpExpectedCode: node.httpExpectedCode ?? 200,
+        });
+
+        newInternetStatus = pollResult.status;
+        latency = pollResult.latency;
+      } else {
+        // Fallback to shared external connectivity
+        newInternetStatus = sharedInternetCheck.alive ? 'ONLINE' : 'OFFLINE';
+        latency = sharedInternetCheck.latency;
+      }
+    }
+
+    const statusChanged = node.internetStatus !== newInternetStatus;
+    const previousStability = internetStatusStability.get(node.id);
+    const nowMs = now.getTime();
+
+    if (!previousStability || previousStability.status !== newInternetStatus) {
+      internetStatusStability.set(node.id, { status: newInternetStatus, changedAt: nowMs });
+    }
+
+    const stabilityEntry = internetStatusStability.get(node.id);
+    const isStable = stabilityEntry ? (nowMs - stabilityEntry.changedAt) >= INTERNET_STABILITY_WINDOW_MS : false;
+
+    nodeUpdates.push({ id: node.id, name: node.name, newInternetStatus, latency, statusChanged });
+    statusMap.set(node.id, newInternetStatus);
+    latencyMap.set(node.id, latency);
+    stabilityMap.set(node.id, isStable);
     
     if (statusChanged) {
-      statusHistoryCreates.push({ nodeId: node.id, name: node.name });
-      const emoji = newStatus === 'ONLINE' ? '🌐' : '🔴';
-      console.log(`${emoji} ${node.name}: Internet ${node.internetStatus} → ${newStatus}`);
-
-      // Trigger webhook for internet status change
-      if (await isWebhookEnabled()) {
-        const webhookData = {
-          node_id: node.id,
-          node_name: node.name,
-          previous_status: node.internetStatus,
-          new_status: newStatus,
-          latency: internetCheck.latency || undefined,
-        };
-
-        if (newStatus === 'OFFLINE') {
-          triggerInternetDown(webhookData);
-        } else if (newStatus === 'ONLINE' && node.internetStatus === 'OFFLINE') {
-          triggerInternetUp(webhookData);
-        }
-      }
+      statusHistoryCreates.push({ nodeId: node.id, name: node.name, newInternetStatus, latency });
+      const emoji = newInternetStatus === 'ONLINE' ? '🌐' : '🔴';
+      console.log(`${emoji} ${node.name}: Internet ${node.internetStatus} → ${newInternetStatus}`);
     }
 
     results.push({
       nodeId: node.id,
-      internetStatus: newStatus,
-      latency: internetCheck.latency,
+      internetStatus: newInternetStatus,
+      latency,
     });
   }
 
@@ -239,23 +286,23 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
         prisma.node.update({
           where: { id: node.id },
           data: {
-            internetStatus: newStatus,
+            internetStatus: node.newInternetStatus,
             internetLastCheck: now,
-            status: newStatus,
-            latency: internetCheck.latency,
-            lastSeen: internetCheck.alive ? now : undefined,
+            status: node.newInternetStatus,
+            latency: node.latency,
+            lastSeen: node.newInternetStatus === 'ONLINE' ? now : undefined,
           },
         })
       ),
       // Batch status history creates (only for status changes)
-      ...statusHistoryCreates.map(({ nodeId }) =>
+      ...statusHistoryCreates.map(({ nodeId, newInternetStatus, latency }) =>
         prisma.probeStatus.create({
           data: {
             nodeId,
-            status: newStatus,
-            internetStatus: newStatus,
-            latency: internetCheck.latency,
-            message: internetCheck.alive ? 'Internet reachable' : 'Internet unreachable',
+            status: newInternetStatus,
+            internetStatus: newInternetStatus,
+            latency: latency ?? null,
+            message: newInternetStatus === 'ONLINE' ? 'Internet reachable' : 'Internet unreachable',
           },
         })
       ),
@@ -264,19 +311,109 @@ async function checkInternetNodes(): Promise<InternetCheckResult[]> {
 
   // Broadcast updates in a single batched message
   if (internetNodes.length > 0) {
-    const wsPayloads = internetNodes.map(node => ({
-      nodeId: node.id,
-      status: newStatus,
-      internetStatus: newStatus,
-      latency: internetCheck.latency,
-      lastSeen: internetCheck.alive ? now.toISOString() : undefined,
-      internetLastCheck: now.toISOString(),
-    }));
+    const wsPayloads = internetNodes.map(node => {
+      const status = statusMap.get(node.id) || 'UNKNOWN';
+      const latency = latencyMap.get(node.id) ?? null;
+      return {
+        nodeId: node.id,
+        status,
+        internetStatus: status,
+        latency,
+        lastSeen: status === 'ONLINE' ? now.toISOString() : undefined,
+        internetLastCheck: now.toISOString(),
+      };
+    });
     
     broadcastMessage({
       type: 'BATCH_STATUS_UPDATE',
       payload: { updates: wsPayloads },
       timestamp: now.toISOString(),
+    });
+  }
+
+  // Decide active internet source per target and auto-switch if current is offline
+  const connections = internetNodes.flatMap(node => node.outgoingConnections.map(conn => ({
+    connectionId: conn.id,
+    sourceNodeId: conn.sourceNodeId,
+    sourceNodeName: internetNodes.find(n => n.id === conn.sourceNodeId)?.name || '',
+    targetNodeId: conn.targetNodeId,
+    targetNodeName: conn.targetNode.name,
+    isActiveSource: conn.isActiveSource,
+  })));
+
+  const byTarget = connections.reduce<Record<string, typeof connections>>((acc, conn) => {
+    acc[conn.targetNodeId] = acc[conn.targetNodeId] || [];
+    acc[conn.targetNodeId].push(conn);
+    return acc;
+  }, {});
+
+  let switchedAny = false;
+  const activeConnectionByTarget = new Map<string, string>();
+
+  for (const [targetId, conns] of Object.entries(byTarget)) {
+    const currentActive = conns.find(c => c.isActiveSource);
+    const onlineCandidates = conns.filter(c => statusMap.get(c.sourceNodeId) === 'ONLINE');
+    const nextActive = onlineCandidates[0] || null;
+
+    if ((currentActive && statusMap.get(currentActive.sourceNodeId) !== 'ONLINE') || (!currentActive && nextActive)) {
+      if (nextActive) {
+        await prisma.connection.updateMany({
+          where: { targetNodeId: targetId, sourceNode: { type: 'INTERNET' } },
+          data: { isActiveSource: false },
+        });
+
+        await prisma.connection.update({
+          where: { id: nextActive.connectionId },
+          data: { isActiveSource: true },
+        });
+
+        broadcastMessage({
+          type: 'CONNECTION_ACTIVE_SOURCE_CHANGED',
+          payload: {
+            connectionId: nextActive.connectionId,
+            targetNodeId: nextActive.targetNodeId,
+            isActiveSource: true,
+          },
+          timestamp: now.toISOString(),
+        });
+
+        switchedAny = true;
+        activeConnectionByTarget.set(targetId, nextActive.connectionId);
+      }
+    } else if (currentActive) {
+      activeConnectionByTarget.set(targetId, currentActive.connectionId);
+    }
+  }
+
+  // Send consolidated webhook snapshot when anything changes AND states are stable
+  const anyStatusChanged = nodeUpdates.some(n => n.statusChanged);
+  const allStable = internetNodes.every(n => stabilityMap.get(n.id));
+
+  if (allStable && (anyStatusChanged || switchedAny) && await isWebhookEnabled()) {
+    const lines = internetNodes.map(node => ({
+      node_id: node.id,
+      node_name: node.name,
+      status: statusMap.get(node.id) || 'UNKNOWN',
+      latency: latencyMap.get(node.id) ?? undefined,
+      is_active_source: connections.some(c => c.sourceNodeId === node.id && activeConnectionByTarget.get(c.targetNodeId) === c.connectionId),
+    }));
+
+    // Pick first active connection for summary (there may be multiple targets)
+    const firstActiveTarget = Array.from(activeConnectionByTarget.entries())[0];
+    const activeConnId = firstActiveTarget ? firstActiveTarget[1] : null;
+    const activeConn = connections.find(c => c.connectionId === activeConnId);
+
+    triggerInternetStatus({
+      lines,
+      active_connection: activeConn
+        ? {
+            connection_id: activeConn.connectionId,
+            source_node_id: activeConn.sourceNodeId,
+            source_node_name: activeConn.sourceNodeName,
+            target_node_id: activeConn.targetNodeId,
+            target_node_name: activeConn.targetNodeName,
+          }
+        : null,
     });
   }
 

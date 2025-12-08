@@ -14,6 +14,7 @@ export type WebhookEventType =
   | 'NODE_UP'
   | 'INTERNET_DOWN'
   | 'INTERNET_UP'
+  | 'INTERNET_STATUS'
   | 'GROUP_DEGRADED'
   | 'TEST';
 
@@ -21,7 +22,7 @@ export type WebhookEventType =
 export interface WebhookEvent {
   event_type: WebhookEventType;
   timestamp: string;
-  data: IspChangedData | NodeStatusData | InternetStatusData | GroupDegradedData | Record<string, unknown>;
+  data: IspChangedData | NodeStatusData | InternetStatusData | InternetStatusSummaryData | GroupDegradedData | Record<string, unknown>;
 }
 
 // ISP Changed event data
@@ -55,6 +56,24 @@ export interface InternetStatusData {
   new_status: string;
   downtime_seconds?: number;
   latency?: number;
+}
+
+// Consolidated internet status snapshot (all lines + active source)
+export interface InternetStatusSummaryData {
+  lines: Array<{
+    node_id: string;
+    node_name: string;
+    status: string;
+    latency?: number | null;
+    is_active_source?: boolean;
+  }>;
+  active_connection?: {
+    connection_id: string;
+    source_node_id: string;
+    source_node_name: string;
+    target_node_id: string;
+    target_node_name: string;
+  } | null;
 }
 
 // Group degraded event data
@@ -132,6 +151,16 @@ async function generateSignature(payload: string): Promise<string> {
  */
 function getEventKey(event: WebhookEvent): string {
   const data = event.data as Record<string, unknown>;
+
+  // For consolidated internet status, key by active source and line statuses
+  if (event.event_type === 'INTERNET_STATUS') {
+    const activeId = (data.active_connection as any)?.source_node_id || '';
+    const lines = Array.isArray((data as any).lines)
+      ? (data as any).lines.map((l: any) => `${l.node_id}:${l.status}:${l.is_active_source ? 'A' : ''}`).join('|')
+      : '';
+    return `${event.event_type}:${activeId}:${lines}`;
+  }
+
   const nodeId = data.node_id || data.matched_node_id || '';
   return `${event.event_type}:${nodeId}:${data.new_status || ''}`;
 }
@@ -313,6 +342,17 @@ export function triggerInternetUp(data: InternetStatusData): void {
     event_type: 'INTERNET_UP',
     timestamp: new Date().toISOString(),
     data: { ...data, new_status: 'ONLINE' },
+  });
+}
+
+/**
+ * Trigger consolidated INTERNET_STATUS snapshot
+ */
+export function triggerInternetStatus(data: InternetStatusSummaryData): void {
+  queueWebhookEvent({
+    event_type: 'INTERNET_STATUS',
+    timestamp: new Date().toISOString(),
+    data,
   });
 }
 

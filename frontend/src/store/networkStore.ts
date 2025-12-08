@@ -720,16 +720,17 @@ export const selectGroupCount = (state: NetworkState) => state.groups.length;
 export const selectConnectionCount = (state: NetworkState) => state.connections.length;
 
 // Status summary selector - used by StatusPanel
+// Counts all nodes that can be monitored (excludes VIRTUAL type which are just visual)
 export const selectStatusSummary = (state: NetworkState) => {
-  const probes = state.nodes.filter(n => n.type === 'PROBE');
+  const monitorableNodes = state.nodes.filter(n => n.type !== 'VIRTUAL');
   return {
-    total: probes.length,
-    online: probes.filter(p => p.status === 'ONLINE').length,
-    offline: probes.filter(p => p.status === 'OFFLINE').length,
-    degraded: probes.filter(p => p.status === 'DEGRADED').length,
-    unknown: probes.filter(p => p.status === 'UNKNOWN').length,
-    internetOnline: probes.filter(p => p.internetStatus === 'ONLINE').length,
-    internetOffline: probes.filter(p => p.internetStatus === 'OFFLINE').length,
+    total: monitorableNodes.length,
+    online: monitorableNodes.filter(p => p.status === 'ONLINE').length,
+    offline: monitorableNodes.filter(p => p.status === 'OFFLINE').length,
+    degraded: monitorableNodes.filter(p => p.status === 'DEGRADED').length,
+    unknown: monitorableNodes.filter(p => p.status === 'UNKNOWN').length,
+    internetOnline: monitorableNodes.filter(p => p.internetStatus === 'ONLINE').length,
+    internetOffline: monitorableNodes.filter(p => p.internetStatus === 'OFFLINE').length,
   };
 };
 

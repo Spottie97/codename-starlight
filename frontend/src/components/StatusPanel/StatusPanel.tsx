@@ -43,16 +43,21 @@ export function StatusPanel() {
   const connections = useNetworkStore(selectConnections);
   const setActiveSource = useNetworkStore((s) => s.setActiveSource);
 
-  const probes = nodes.filter(n => n.type === 'PROBE');
+  // Show all monitorable nodes (exclude VIRTUAL which are just visual)
+  const probes = nodes.filter(n => n.type !== 'VIRTUAL');
   
   // Get all INTERNET type nodes
   const internetNodes = nodes.filter(n => n.type === 'INTERNET');
+  const internetOnlineCount = internetNodes.filter(n => n.internetStatus === 'ONLINE').length;
+  const internetOfflineCount = internetNodes.filter(n => n.internetStatus === 'OFFLINE').length;
   
   // Get connections from INTERNET nodes (potential internet sources)
   const internetConnections = connections.filter(conn => {
     const sourceNode = nodes.find(n => n.id === conn.sourceNodeId);
     return sourceNode?.type === 'INTERNET';
   });
+  const activeInternetConnections = internetConnections.filter(c => c.isActiveSource);
+  const activeInternetNodeIds = new Set(activeInternetConnections.map(c => c.sourceNodeId));
 
   // Fetch current ISP info on mount
   useEffect(() => {
@@ -173,15 +178,20 @@ export function StatusPanel() {
             </div>
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-display font-bold text-neon-green">
-                {summary.internetOnline}
+                {internetOnlineCount}
               </span>
-              <span className="text-gray-500 text-sm">/ {summary.total}</span>
+              <span className="text-gray-500 text-sm">/ {internetNodes.length}</span>
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {summary.internetOffline > 0 && (
-                <span className="text-neon-pink">{summary.internetOffline} offline</span>
+              {internetOfflineCount > 0 && (
+                <span className="text-neon-pink">{internetOfflineCount} offline</span>
               )}
             </div>
+            {activeInternetConnections.length > 0 && (
+              <div className="text-xs text-gray-400 mt-2">
+                Active: {Array.from(activeInternetNodeIds).map(id => nodes.find(n => n.id === id)?.name || 'Unknown').join(', ')}
+              </div>
+            )}
           </div>
         </div>
 
@@ -343,10 +353,10 @@ export function StatusPanel() {
           </div>
         )}
 
-        {/* Probes list */}
+        {/* Monitored Nodes list */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
           <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-            Probes ({probes.length})
+            Monitored Nodes ({probes.length})
           </h3>
           
           <div className="space-y-2">
@@ -357,7 +367,7 @@ export function StatusPanel() {
             {probes.length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 <WifiOff className="mx-auto mb-2 opacity-50" size={32} />
-                <p className="text-sm">No probes configured</p>
+                <p className="text-sm">No nodes configured</p>
                 <p className="text-xs mt-1">Add nodes to start monitoring</p>
               </div>
             )}
